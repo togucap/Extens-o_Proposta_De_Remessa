@@ -651,19 +651,45 @@
         .girando { display: inline-block; animation: girar 1s linear infinite; }
         @keyframes girar { to { transform: rotate(360deg); } }
 
-        .historico {
+        .paineis {
           position: fixed; right: 12px; bottom: 12px; z-index: 2147483646;
-          width: 350px; max-height: 60vh; display: none; flex-direction: column;
+          width: 350px; max-height: calc(100vh - 24px);
+          display: flex; flex-direction: column; gap: 18px;
+          font-size: 12px; color: #111827;
+        }
+        .painel {
+          display: none; flex-direction: column; min-height: 0;
           background: #fff; border: 1px solid #d1d5db; border-radius: 10px;
-          box-shadow: 0 8px 24px rgba(0,0,0,.18); overflow: hidden; font-size: 12px; color: #111827;
+          box-shadow: 0 8px 24px rgba(0,0,0,.18); overflow: hidden;
         }
-        .historico.ativo { display: flex; }
-        .historico header {
-          display: flex; justify-content: space-between; align-items: center;
-          padding: 6px 10px; background: #f3f4f6; font-weight: bold; cursor: pointer; user-select: none;
+        .painel.ativo { display: flex; }
+        .painel header {
+          display: flex; justify-content: space-between; align-items: center; gap: 8px;
+          padding: 8px 12px; font-weight: bold; cursor: pointer; user-select: none;
+          background: #f3f4f6; border-bottom: 1px solid #e5e7eb;
         }
-        .historico ul { list-style: none; margin: 0; padding: 8px; overflow-y: auto; background: #f9fafb; }
-        .historico.recolhido ul { display: none; }
+        .painel .corpo { overflow-y: auto; padding: 8px; background: #f9fafb; }
+        .painel.recolhido .corpo { display: none; }
+        .painel.recolhido header { border-bottom: 0; }
+
+        .conferencia { max-height: 45vh; border-width: 2px; }
+        .conferencia.falha { border-color: #b91c1c; }
+        .conferencia.falha header { background: #fef2f2; color: #b91c1c; }
+        .conferencia.ok { border-color: #15803d; }
+        .conferencia.ok header { background: #f0fdf4; color: #15803d; }
+        .conferencia .secao { font-weight: bold; padding: 4px 2px 6px; }
+        .conferencia .secao + .item, .conferencia .item + .item { margin-top: 0; }
+        .conferencia .secao.nao { color: #b91c1c; }
+        .conferencia .secao.sim { color: #15803d; margin-top: 6px; }
+        .conferencia .item {
+          padding: 8px 10px; margin-bottom: 8px; line-height: 1.45; background: #fff;
+          border: 1px solid #e5e7eb; border-left: 4px solid var(--cor); border-radius: 8px;
+        }
+        .conferencia .item .cod { font-family: Consolas, monospace; font-weight: bold; color: var(--cor); }
+        .conferencia .item .det { color: #374151; }
+
+        .historico { max-height: 45vh; }
+        .historico ul { list-style: none; margin: 0; }
         .historico li {
           padding: 8px 10px; margin-bottom: 8px; line-height: 1.45;
           background: #fff; border: 1px solid #e5e7eb; border-left: 4px solid var(--cor); border-radius: 8px;
@@ -677,18 +703,6 @@
           display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 4px;
           background: #b91c1c; color: #fff; font-size: 11px; font-weight: bold;
         }
-        .invalidas { display: none; border-bottom: 2px solid #b91c1c; background: #fef2f2; max-height: 28vh; overflow-y: auto; }
-        .invalidas.ativo { display: block; }
-        .historico.recolhido .invalidas { display: none; }
-        .invalidas { padding: 0 8px 8px; }
-        .invalidas .tit { padding: 8px 2px; font-weight: bold; color: #b91c1c; }
-        .invalidas .item {
-          padding: 8px 10px; margin-bottom: 8px; line-height: 1.45;
-          background: #fff; border: 1px solid #fecaca; border-left: 4px solid #b91c1c; border-radius: 8px;
-        }
-        .invalidas .item:last-child { margin-bottom: 0; }
-        .invalidas .item .cod { font-family: Consolas, monospace; font-weight: bold; color: #b91c1c; }
-        .invalidas .item .det { color: #374151; }
       </style>
       <div class="balao" role="status" aria-live="polite">
         <button class="fechar" title="Fechar">×</button>
@@ -701,25 +715,33 @@
         <ul class="lista"></ul>
         <div class="fila"></div>
       </div>
-      <div class="historico">
-        <header><span>Etiquetas verificadas (<span class="qtd">0</span>)</span><span class="seta">▾</span></header>
-        <div class="invalidas"></div>
-        <ul></ul>
+      <div class="paineis">
+        <section class="painel conferencia">
+          <header><span class="tit-conf">Conferência da proposta</span><span class="seta">▾</span></header>
+          <div class="corpo"></div>
+        </section>
+        <section class="painel historico">
+          <header><span>Etiquetas verificadas (<span class="qtd">0</span>)</span><span class="seta">▾</span></header>
+          <ul class="corpo"></ul>
+        </section>
       </div>
     `;
 
     const $ = (s) => raiz.querySelector(s);
     const balao = $('.balao');
     const historico = $('.historico');
+    const conferencia = $('.conferencia');
     let timerOcultar = null;
 
     // Não roubar o foco do campo de etiquetas ao clicar nos elementos da extensão.
     raiz.addEventListener('mousedown', (e) => e.preventDefault());
     $('.fechar').addEventListener('click', () => ocultar());
-    historico.querySelector('header').addEventListener('click', () => {
-      historico.classList.toggle('recolhido');
-      $('.seta').textContent = historico.classList.contains('recolhido') ? '▸' : '▾';
-    });
+    for (const painel of [historico, conferencia]) {
+      painel.querySelector('header').addEventListener('click', () => {
+        painel.classList.toggle('recolhido');
+        painel.querySelector('.seta').textContent = painel.classList.contains('recolhido') ? '▸' : '▾';
+      });
+    }
 
     function anexar() {
       if (!host.isConnected) (document.body || document.documentElement).appendChild(host);
@@ -791,19 +813,28 @@
           timerOcultar = setTimeout(ocultar, CONFIG.TEMPO_BALAO_MS);
         }
       },
-      atualizarInvalidas(itens) {
+      atualizarConferencia({ invalidos, validos, total }) {
         anexar();
-        const caixa = $('.invalidas');
-        caixa.classList.toggle('ativo', itens.length > 0);
-        if (itens.length) historico.classList.add('ativo');
-        caixa.innerHTML =
-          `<div class="tit">⚠ Não aparecem na proposta (${itens.length})</div>` +
-          itens.map((i) =>
-            `<div class="item"><span class="cod">${escaparHtml(i.codigo)}</span>` +
-            `<div class="det">Produto: ${escaparHtml(i.produto)}</div>` +
-            `<div class="det">Final: ${escaparHtml(i.final)}</div></div>`
-          ).join('');
-        const codigos = new Set(itens.map((i) => i.codigo));
+        const cartao = (i, status) =>
+          `<div class="item" style="--cor:${ESTILOS[status].cor}"><span class="cod">${escaparHtml(i.codigo)}</span>` +
+          `<div class="det">Produto: ${escaparHtml(i.produto)}</div>` +
+          `<div class="det">Final: ${escaparHtml(i.final)}</div></div>`;
+        conferencia.classList.add('ativo');
+        conferencia.classList.toggle('falha', invalidos.length > 0);
+        conferencia.classList.toggle('ok', invalidos.length === 0);
+        $('.tit-conf').textContent = invalidos.length
+          ? `Conferência da proposta: ${invalidos.length} de ${total} não entraram`
+          : `Conferência da proposta: todas as ${total} entraram`;
+        conferencia.querySelector('.corpo').innerHTML =
+          (invalidos.length
+            ? `<div class="secao nao">✖ Não entraram na proposta (${invalidos.length})</div>` +
+              invalidos.map((i) => cartao(i, 'proposta_falha')).join('')
+            : '') +
+          (validos.length
+            ? `<div class="secao sim">✔ Entraram na proposta (${validos.length})</div>` +
+              validos.map((i) => cartao(i, 'proposta_ok')).join('')
+            : '');
+        const codigos = new Set(invalidos.map((i) => i.codigo));
         for (const [codigo, li] of marcados) {
           const selo = li.querySelector('.selo');
           if (codigos.has(codigo) && !selo) {
@@ -955,20 +986,29 @@
     return Array.from(new Set(lista));
   }
 
-  /** Etiquetas presentes na listagem (coluna "Etiqueta" + valor dos checkboxes). */
+  /** Etiquetas presentes na listagem, com Produto e Final da própria tabela. */
   function etiquetasDaListagem(container) {
-    const validas = new Set();
+    const validas = new Map(); // ETIQUETA (maiúscula) -> { produto, final }
     const tabela = container.querySelector('table');
     if (tabela) {
-      const cabecalhos = Array.from(tabela.querySelectorAll('thead th, thead td'));
-      const idx = cabecalhos.findIndex((th) => normalizar(th.textContent) === 'etiqueta');
+      const cabecalhos = Array.from(tabela.querySelectorAll('thead th, thead td')).map((th) => normalizar(th.textContent));
+      const iEtiqueta = cabecalhos.indexOf('etiqueta');
+      const iProduto = cabecalhos.indexOf('produto');
+      const iFinal = cabecalhos.indexOf('final');
       for (const tr of tabela.querySelectorAll('tbody tr')) {
         const tds = tr.querySelectorAll(':scope > td, :scope > th');
-        if (idx >= 0 && tds[idx]) validas.add(textoLimpo(tds[idx]));
+        const cb = tr.querySelector('input[name="produto_serie_etiqueta[]"], input.checkbox-produto');
+        const codigo = (iEtiqueta >= 0 && tds[iEtiqueta] ? textoLimpo(tds[iEtiqueta]) : '') || (cb && cb.value.trim()) || '';
+        if (!codigo) continue;
+        validas.set(codigo.toUpperCase(), {
+          produto: iProduto >= 0 && tds[iProduto] ? textoLimpo(tds[iProduto]) : '',
+          final: iFinal >= 0 && tds[iFinal] ? textoLimpo(tds[iFinal]) : '',
+        });
       }
     }
     for (const cb of container.querySelectorAll('input[name="produto_serie_etiqueta[]"], input.checkbox-produto')) {
-      if (cb.value) validas.add(cb.value.trim());
+      const c = cb.value.trim().toUpperCase();
+      if (c && !validas.has(c)) validas.set(c, { produto: '', final: '' });
     }
     return validas;
   }
@@ -980,6 +1020,7 @@
 
   const comparacao = (() => {
     let invalidas = [];
+    let aprovadas = []; // [{ codigo, produto, final }] vindos da tabela da proposta
     let total = 0;
 
     function itensInvalidos() {
@@ -999,7 +1040,7 @@
     function render(apenasAtualizar) {
       const itens = itensInvalidos();
       destaque.definir(new Map(itens.map((i) => [i.codigo, `${i.produto} | Final: ${i.final}`])));
-      ui.atualizarInvalidas(itens);
+      ui.atualizarConferencia({ invalidos: itens, validos: aprovadas, total });
       if (!total) return;
       const r = itens.length
         ? {
@@ -1018,10 +1059,19 @@
 
     return {
       comparar(container, bipadas) {
-        const validas = new Set(Array.from(etiquetasDaListagem(container), (c) => c.toUpperCase()));
+        const validas = etiquetasDaListagem(container);
         total = bipadas.length;
         invalidas = bipadas.filter((c) => !validas.has(c.toUpperCase()));
-        console.info('[Triagem RMA] Conferência da proposta:', { bipadas, validas: [...validas], invalidas });
+        aprovadas = bipadas.filter((c) => validas.has(c.toUpperCase())).map((codigo) => {
+          const t = validas.get(codigo.toUpperCase());
+          const r = resultados.get(codigo);
+          return {
+            codigo,
+            produto: t.produto || valorExtra(r, 'Produto') || 'não encontrado',
+            final: t.final || valorExtra(r, 'Final') || 'não encontrado',
+          };
+        });
+        console.info('[Triagem RMA] Conferência da proposta:', { bipadas, validas: [...validas.keys()], invalidas });
         for (const c of invalidas) {
           if (!resultados.has(c) && !naFila(c)) enfileirar(c, { silencioso: true });
         }

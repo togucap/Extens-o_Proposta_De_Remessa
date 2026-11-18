@@ -32,8 +32,12 @@ Ao clicar no botão que gera a listagem de produtos, a extensão espera a tabela
 - As etiquetas que **não aparecem** na tabela (não atendem aos critérios da proposta) ficam
   **destacadas em vermelho no próprio campo de bipagem**, com o **Produto** e o **Final** ao lado.
 - O balão central mostra quantas e quais etiquetas ficaram de fora, com Produto e Final.
-- O painel da extensão (canto inferior direito) ganha a seção **"Não aparecem na proposta"** e
-  as etiquetas recebem o selo **NÃO APARECE NA PROPOSTA**.
+- No canto inferior direito ficam **dois painéis separados**:
+  - **Conferência da proposta** (em cima): lista o que **não entrou** (vermelho) e o que **entrou**
+    (verde) na proposta, com Produto e Final de cada etiqueta.
+  - **Etiquetas verificadas** (embaixo): histórico das etiquetas bipadas e a verificação de triagem;
+    as que não entraram na proposta recebem o selo **NÃO APARECE NA PROPOSTA**.
+  - Cada painel pode ser recolhido clicando no título.
 - Se todas aparecerem, o balão fica verde e some sozinho.
 
 Nada é bloqueado ou alterado no campo: o destaque é uma camada desenhada por cima dele.
