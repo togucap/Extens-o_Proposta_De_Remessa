@@ -4,8 +4,9 @@
  * Roda na tela "Gerar Proposta de Remessa". Cada etiqueta bipada no campo
  * "Etiquetas" (#form-mercadoria-busca) é consultada, uma por vez, na tela de
  * estoque de mercadoria. O rastreamento é lido de baixo para cima procurando a
- * interação "RMA - Registrado Triagem"; a data encontrada é comparada com a
- * data atual e o resultado aparece num balão flutuante no centro da tela.
+ * interação "RMA - Registrado Triagem" (avisando quando houver mais de uma) e o
+ * resultado, com Produto e Final, aparece num balão flutuante no centro da tela.
+ * A extensão apenas avisa: não bloqueia nem altera nada na tela.
  */
 (() => {
   'use strict';
@@ -30,8 +31,11 @@
     // Texto da interação procurada no rastreamento.
     TEXTO_INTERACAO: 'RMA - Registrado Triagem',
 
-    // A data da interação é considerada "recente" quando tem MENOS que este número de dias.
-    DIAS_LIMITE: 5,
+    // Campos exibidos no resumo: procura o rótulo na tela de estoque e pega o valor à frente dele.
+    CAMPOS_EXTRAS: [
+      { titulo: 'Produto', rotulos: ['Produto'] },
+      { titulo: 'Final', rotulos: ['Final'] },
+    ],
 
     // Tempo sem novas teclas para considerar que o leitor terminou de enviar uma etiqueta
     // (usado quando o leitor não envia ENTER no final).
@@ -58,7 +62,7 @@
   const normalizar = (texto) =>
     String(texto || '')
       .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
+      .replace(/[\u0300-\u036f]/g, '')
       .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase();
@@ -71,22 +75,74 @@
     })[c]);
   }
 
-  /** Dias de calendário entre a data (dd/mm/aaaa) e hoje. */
-  function diasDesde(dataBr) {
-    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dataBr);
-    if (!m) return null;
-    const evento = Date.UTC(+m[3], +m[2] - 1, +m[1]);
-    const h = new Date();
-    const hoje = Date.UTC(h.getFullYear(), h.getMonth(), h.getDate());
-    return Math.round((hoje - evento) / 86400000);
+  // ---------------------------------------------------------------------------
+  // Leitura de campos do tipo "Rótulo: valor" (ex.: Produto, Final)
+  // ---------------------------------------------------------------------------
+  const tiraDoisPontos = (t) => normalizar(t).replace(/[\s:]+$/, '');
+
+  /** Valor de um elemento: campo de formulário dentro dele ou o próprio texto. */
+  function valorDoElemento(el) {
+    const campo = el.matches('input, select, textarea')
+      ? el
+      : el.querySelector('input:not([type="hidden"]):not([type="button"]):not([type="submit"]), select, textarea');
+    if (campo) {
+      if (campo.tagName === 'SELECT') {
+        const opt = campo.querySelector('option[selected]') || campo.options[campo.selectedIndex];
+        return opt ? textoLimpo(opt) : '';
+      }
+      return String(campo.value || campo.getAttribute('value') || '').trim();
+    }
+    return textoLimpo(el);
+  }
+
+  /** Primeiro valor não vazio depois do rótulo (próxima célula ou texto logo em seguida). */
+  function valorAoLadoDoRotulo(rotulo) {
+    const base = rotulo.closest('td, th, dt') || rotulo;
+    for (let no = base.nextSibling; no; no = no.nextSibling) {
+      if (no.nodeType === Node.TEXT_NODE) {
+        const t = no.textContent.replace(/\s+/g, ' ').replace(/^[\s:]+/, '').trim();
+        if (t) return t;
+      } else if (no.nodeType === Node.ELEMENT_NODE) {
+        if (no.tagName === 'BR') continue;
+        const v = valorDoElemento(no).replace(/^[\s:]+/, '').trim();
+        if (v) return v;
+      }
+    }
+    // Rótulo e valor no mesmo elemento: "Produto: Nome do produto".
+    const pai = base.parentElement;
+    if (pai) {
+      const texto = textoLimpo(pai);
+      const rot = textoLimpo(rotulo);
+      const i = texto.indexOf(rot);
+      if (i >= 0) {
+        const resto = texto.slice(i + rot.length).replace(/^[\s:]+/, '').trim();
+        if (resto && resto.length < 300) return resto;
+      }
+    }
+    return '';
+  }
+
+  /** Procura no documento um rótulo (ex.: "Produto") e devolve o valor ao lado dele. */
+  function extrairCampoRotulado(doc, rotulos) {
+    const alvos = rotulos.map(tiraDoisPontos);
+    const elementos = doc.querySelectorAll('td, th, dt, b, strong, label, font, span, div, p');
+    for (const el of elementos) {
+      if (el.closest('#rastreamento')) continue;
+      const texto = textoLimpo(el);
+      if (!texto || texto.length > 40 || !alvos.includes(tiraDoisPontos(texto))) continue;
+      const valor = valorAoLadoDoRotulo(el);
+      if (valor) return valor;
+    }
+    return '';
   }
 
   // ---------------------------------------------------------------------------
   // Leitura do rastreamento
   // ---------------------------------------------------------------------------
   /**
-   * Lê a tabela #rastreamento de baixo para cima e devolve a última ocorrência
-   * de CONFIG.TEXTO_INTERACAO. Retorna null quando a tabela não existe.
+   * Lê a tabela #rastreamento de baixo para cima e devolve todas as ocorrências
+   * de CONFIG.TEXTO_INTERACAO (a mais recente primeiro), além dos campos extras
+   * (Produto, Final). Retorna null quando a tabela não existe.
    */
   function analisarRastreamento(doc) {
     const tabela = doc.querySelector('#rastreamento');
@@ -98,22 +154,26 @@
     });
 
     const alvo = normalizar(CONFIG.TEXTO_INTERACAO);
-
+    const ocorrencias = [];
     for (let i = linhas.length - 1; i >= 0; i--) {
       const tds = Array.from(linhas[i].querySelectorAll(':scope > td'));
       const operacao = textoLimpo(tds[3]);
       if (normalizar(operacao).includes(alvo)) {
-        return {
-          encontrado: true,
+        ocorrencias.push({
           data: textoLimpo(tds[0]),
           hora: textoLimpo(tds[1]),
           usuario: textoLimpo(tds[2]),
           operacao,
-          totalInteracoes: linhas.length,
-        };
+        });
       }
     }
-    return { encontrado: false, totalInteracoes: linhas.length };
+
+    const extras = CONFIG.CAMPOS_EXTRAS.map((c) => ({
+      titulo: c.titulo,
+      valor: extrairCampoRotulado(doc, c.rotulos),
+    }));
+
+    return { ocorrencias, extras, totalInteracoes: linhas.length };
   }
 
   function montarResultado(codigo, analise) {
@@ -123,29 +183,39 @@
         status: 'sem_rastreamento',
         titulo: 'Rastreamento não encontrado',
         detalhe: 'A tela de estoque não retornou rastreamento para esta etiqueta.',
+        extras: [],
       };
     }
-    if (!analise.encontrado) {
+    const { ocorrencias, extras } = analise;
+    const quando = (o) => `${o.data} às ${o.hora} — ${o.usuario}`;
+
+    if (!ocorrencias.length) {
       return {
         codigo,
         status: 'nao_encontrado',
         titulo: `Sem "${CONFIG.TEXTO_INTERACAO}"`,
         detalhe: `Nenhuma interação "${CONFIG.TEXTO_INTERACAO}" nas ${analise.totalInteracoes} interações da mercadoria.`,
+        extras,
       };
     }
-    const dias = diasDesde(analise.data);
-    const recente = dias !== null && dias < CONFIG.DIAS_LIMITE;
-    const quando = dias === null ? '' : dias <= 0 ? ' (hoje)' : dias === 1 ? ' (há 1 dia)' : ` (há ${dias} dias)`;
+    if (ocorrencias.length === 1) {
+      return {
+        codigo,
+        status: 'encontrado',
+        titulo: `"${CONFIG.TEXTO_INTERACAO}" encontrado`,
+        detalhe: quando(ocorrencias[0]),
+        extras,
+        ocorrencias,
+      };
+    }
     return {
       codigo,
-      status: recente ? 'recente' : 'antigo',
-      titulo: recente
-        ? `Triagem há menos de ${CONFIG.DIAS_LIMITE} dias`
-        : `Triagem há ${CONFIG.DIAS_LIMITE} dias ou mais`,
-      detalhe: `${CONFIG.TEXTO_INTERACAO}: ${analise.data} às ${analise.hora}${quando} — ${analise.usuario}`,
-      data: analise.data,
-      hora: analise.hora,
-      dias,
+      status: 'multiplo',
+      titulo: `"${CONFIG.TEXTO_INTERACAO}" encontrado ${ocorrencias.length} vezes`,
+      detalhe: 'Atenção: a mercadoria possui mais de uma triagem registrada.',
+      lista: ocorrencias.map(quando),
+      extras,
+      ocorrencias,
     };
   }
 
@@ -517,8 +587,8 @@
   const ui = (() => {
     const ESTILOS = {
       consultando: { cor: '#1d4ed8', fundo: '#eff6ff', icone: '⏳' },
-      recente: { cor: '#15803d', fundo: '#f0fdf4', icone: '✔' },
-      antigo: { cor: '#b45309', fundo: '#fffbeb', icone: '⚠' },
+      encontrado: { cor: '#15803d', fundo: '#f0fdf4', icone: '✔' },
+      multiplo: { cor: '#b45309', fundo: '#fffbeb', icone: '⚠' },
       nao_encontrado: { cor: '#b91c1c', fundo: '#fef2f2', icone: '✖' },
       sem_rastreamento: { cor: '#b91c1c', fundo: '#fef2f2', icone: '✖' },
       erro: { cor: '#4b5563', fundo: '#f3f4f6', icone: '!' },
@@ -553,7 +623,13 @@
         .titulo { font-size: 20px; font-weight: bold; color: var(--cor); margin-top: 4px; }
         .etiqueta { font-size: 15px; margin-top: 8px; word-break: break-all; }
         .etiqueta b { font-family: Consolas, monospace; }
+        .extras { margin: 10px auto 0; border-collapse: collapse; font-size: 14px; text-align: left; max-width: 100%; }
+        .extras th { padding: 2px 8px 2px 0; color: #6b7280; font-weight: normal; white-space: nowrap; vertical-align: top; }
+        .extras td { padding: 2px 0; font-weight: bold; color: #111827; word-break: break-word; }
+        .extras .vazio { font-weight: normal; color: #9ca3af; font-style: italic; }
         .detalhe { font-size: 14px; margin-top: 8px; color: #374151; }
+        .lista { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; color: #374151; }
+        .lista li { padding: 2px 0; }
         .fila { font-size: 12px; margin-top: 10px; color: #6b7280; min-height: 14px; }
         .girando { display: inline-block; animation: girar 1s linear infinite; }
         @keyframes girar { to { transform: rotate(360deg); } }
@@ -582,7 +658,9 @@
         <div class="icone"></div>
         <div class="titulo"></div>
         <div class="etiqueta"></div>
+        <table class="extras"></table>
         <div class="detalhe"></div>
+        <ul class="lista"></ul>
         <div class="fila"></div>
       </div>
       <div class="historico">
@@ -615,7 +693,15 @@
       return s;
     }
 
-    function mostrar({ status, titulo, codigo, detalhe, restantes }) {
+    function htmlExtras(extras) {
+      return (extras || []).map((e) =>
+        `<tr><th>${escaparHtml(e.titulo)}:</th>` +
+        (e.valor ? `<td>${escaparHtml(e.valor)}</td>` : '<td class="vazio">não encontrado</td>') +
+        '</tr>'
+      ).join('');
+    }
+
+    function mostrar({ status, titulo, codigo, detalhe, lista, extras, restantes }) {
       anexar();
       const s = aplicarEstilo(balao, status);
       $('.icone').innerHTML = status === 'consultando'
@@ -623,7 +709,9 @@
         : s.icone;
       $('.titulo').textContent = titulo;
       $('.etiqueta').innerHTML = `Etiqueta: <b>${escaparHtml(codigo)}</b>`;
+      $('.extras').innerHTML = htmlExtras(extras);
       $('.detalhe').textContent = detalhe || '';
+      $('.lista').innerHTML = (lista || []).map((t, i) => `<li>${i + 1}. ${escaparHtml(t)}</li>`).join('');
       $('.fila').textContent = restantes ? `${restantes} etiqueta(s) aguardando consulta` : '';
       balao.classList.add('visivel');
       clearTimeout(timerOcultar);
@@ -664,7 +752,9 @@
         li.innerHTML =
           `<div><span class="cod">${escaparHtml(r.codigo)}</span> <span class="det">· ${hora}</span></div>` +
           `<div class="res">${escaparHtml(r.titulo)}</div>` +
-          (r.data ? `<div class="det">${escaparHtml(r.data)} ${escaparHtml(r.hora || '')}</div>` : '');
+          (r.extras || []).filter((e) => e.valor)
+            .map((e) => `<div class="det">${escaparHtml(e.titulo)}: ${escaparHtml(e.valor)}</div>`).join('') +
+          (r.ocorrencias || []).map((o) => `<div class="det">Triagem: ${escaparHtml(o.data)} ${escaparHtml(o.hora)}</div>`).join('');
         const ul = historico.querySelector('ul');
         ul.prepend(li);
         while (ul.children.length > CONFIG.MAX_HISTORICO) ul.lastElementChild.remove();
