@@ -11,7 +11,9 @@ Extensão do Google Chrome que roda na tela **Gerar Proposta de Remessa**
 3. Lê a tabela de rastreamento (`#rastreamento`) **de baixo para cima** procurando a interação
    **"RMA - Registrado Triagem"** (a data não é verificada, apenas a existência da interação).
 4. Lê os campos **Produto** e **Final** da tela de estoque (o valor que fica à frente do rótulo).
-5. Mostra um **balão no centro da tela** com o resultado, Produto e Final:
+5. Mostra o resultado, com Produto e Final, no painel **Etiquetas verificadas** (topo da tela, à direita).
+   Enquanto consulta, o título do painel mostra "⏳ consultando…" e quantas etiquetas estão na fila.
+   Não há balão no centro da tela.
 
 | Cor | Resultado |
 |---|---|
@@ -31,7 +33,7 @@ Ao clicar no botão que gera a listagem de produtos, a extensão espera a tabela
 
 - As etiquetas que **não aparecem** na tabela (não atendem aos critérios da proposta) ficam
   **destacadas em vermelho no próprio campo de bipagem**, com o **Produto** e o **Final** ao lado.
-- No **topo da tela, à direita**, ficam **dois painéis lado a lado** (a conferência não usa o balão central):
+- No **topo da tela, à direita**, ficam **dois painéis lado a lado**:
   - **Conferência da proposta** (à esquerda; abre sozinho a cada nova conferência): lista o que **não entrou** (vermelho) e o que **entrou**
     (verde) na proposta, com Produto e Final de cada etiqueta.
   - **Etiquetas verificadas** (à direita): histórico das etiquetas bipadas e a verificação de triagem;
@@ -77,7 +79,6 @@ No início do `content.js` há o objeto `CONFIG`:
 | `SELETOR_BOTAO_VERIFICAR` | `#id_submit_button` | Botão que gera a listagem da proposta |
 | `SELETOR_LISTAGEM` | `#listagem-produtos-filtrado` | Onde a listagem aparece |
 | `ESPERA_FIM_LEITURA_MS` | `700` | Espera para leitores sem ENTER |
-| `TEMPO_BALAO_MS` | `6000` | Tempo do balão na tela (`0` = só fecha no ×) |
 | `TIMEOUT_CONSULTA_MS` | `20000` | Tempo máximo de cada consulta |
 
 ## Problemas

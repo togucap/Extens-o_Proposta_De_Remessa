@@ -5,7 +5,7 @@
  * "Etiquetas" (#form-mercadoria-busca) é consultada, uma por vez, na tela de
  * estoque de mercadoria. O rastreamento é lido de baixo para cima procurando a
  * interação "RMA - Registrado Triagem" (avisando quando houver mais de uma) e o
- * resultado, com Produto e Final, aparece num balão flutuante no centro da tela.
+ * resultado, com Produto e Final, aparece no painel "Etiquetas verificadas".
  * A extensão apenas avisa: não bloqueia nem altera nada na tela.
  */
 (() => {
@@ -47,10 +47,7 @@
     // Tempo máximo de uma consulta.
     TIMEOUT_CONSULTA_MS: 20000,
 
-    // Tempo que o balão fica visível após o resultado (0 = só fecha ao clicar).
-    TEMPO_BALAO_MS: 6000,
-
-    // Quantidade de etiquetas mantidas no histórico (canto inferior direito).
+    // Quantidade de etiquetas mantidas no histórico (painel "Etiquetas verificadas").
     MAX_HISTORICO: 30,
 
     // Botão que gera a listagem de produtos válidos para a proposta.
@@ -502,14 +499,11 @@
   const fila = [];
   let emProcessamento = null;
   const resultados = new Map(); // etiqueta -> último resultado da consulta
-  const silenciosas = new Set(); // etiquetas consultadas sem abrir o balão
 
-  function enfileirar(codigo, { silencioso = false } = {}) {
+  function enfileirar(codigo) {
     if (codigo === emProcessamento || fila.includes(codigo)) return;
-    if (silencioso) silenciosas.add(codigo);
-    else silenciosas.delete(codigo);
     fila.push(codigo);
-    ui.atualizarFila(fila.length);
+    if (emProcessamento !== null) ui.consultando(emProcessamento, fila.length);
     processarFila();
   }
 
@@ -520,9 +514,7 @@
     while (fila.length) {
       const codigo = fila.shift();
       emProcessamento = codigo;
-      const silencioso = silenciosas.delete(codigo);
-      ui.atualizarFila(fila.length);
-      if (!silencioso) ui.mostrarConsultando(codigo);
+      ui.consultando(codigo, fila.length);
 
       let resultado;
       try {
@@ -537,9 +529,9 @@
       }
 
       resultados.set(codigo, resultado);
-      if (!silencioso) ui.mostrarResultado(resultado, fila.length);
       ui.adicionarHistorico(resultado);
       emProcessamento = null;
+      if (!fila.length) ui.consultando(null, 0);
       comparacao.atualizar();
     }
   }
@@ -597,7 +589,7 @@
   setInterval(() => verificarCampo(), CONFIG.INTERVALO_VERIFICACAO_MS);
 
   // ---------------------------------------------------------------------------
-  // Interface (balão central + histórico)
+  // Interface (painéis de conferência e de etiquetas verificadas)
   // ---------------------------------------------------------------------------
   const ui = (() => {
     const ESTILOS = {
@@ -619,35 +611,6 @@
       <style>
         :host { all: initial; }
         * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; }
-        .balao {
-          position: fixed; top: 50%; left: 50%; z-index: 2147483647;
-          transform: translate(-50%, -50%) scale(.96);
-          width: min(460px, calc(100vw - 32px));
-          background: var(--fundo, #fff); color: #111827;
-          border: 3px solid var(--cor, #1d4ed8); border-radius: 16px;
-          box-shadow: 0 20px 50px rgba(0,0,0,.35);
-          padding: 18px 20px 16px; text-align: center;
-          opacity: 0; pointer-events: none;
-          transition: opacity .15s ease, transform .15s ease;
-        }
-        .balao.visivel { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
-        .fechar {
-          position: absolute; top: 6px; right: 10px; border: 0; background: none;
-          font-size: 22px; line-height: 1; color: #6b7280; cursor: pointer;
-        }
-        .cabecalho { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }
-        .icone { font-size: 42px; line-height: 1.1; color: var(--cor); margin-top: 6px; }
-        .titulo { font-size: 20px; font-weight: bold; color: var(--cor); margin-top: 4px; }
-        .etiqueta { font-size: 15px; margin-top: 8px; word-break: break-all; }
-        .etiqueta b { font-family: Consolas, monospace; }
-        .extras { margin: 10px auto 0; border-collapse: collapse; font-size: 14px; text-align: left; max-width: 100%; }
-        .extras th { padding: 2px 8px 2px 0; color: #6b7280; font-weight: normal; white-space: nowrap; vertical-align: top; }
-        .extras td { padding: 2px 0; font-weight: bold; color: #111827; word-break: break-word; }
-        .extras .vazio { font-weight: normal; color: #9ca3af; font-style: italic; }
-        .detalhe { font-size: 14px; margin-top: 8px; color: #374151; }
-        .lista { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; color: #374151; }
-        .lista li { padding: 6px 10px; margin-top: 6px; background: rgba(255,255,255,.7); border-radius: 8px; border-left: 3px solid var(--cor); text-align: left; }
-        .fila { font-size: 12px; margin-top: 10px; color: #6b7280; min-height: 14px; }
         .girando { display: inline-block; animation: girar 1s linear infinite; }
         @keyframes girar { to { transform: rotate(360deg); } }
 
@@ -688,8 +651,11 @@
         .conferencia .item .cod { font-family: Consolas, monospace; font-weight: bold; color: var(--cor); }
         .conferencia .item .det { color: #374151; }
 
+        .status { font-weight: normal; color: #1d4ed8; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .historico header > span:first-child { min-width: 0; display: flex; flex-direction: column; }
         .historico { max-height: 45vh; }
         .historico ul { list-style: none; margin: 0; }
+        .historico ul:empty { display: none; }
         .historico li {
           padding: 8px 10px; margin-bottom: 8px; line-height: 1.45;
           background: #fff; border: 1px solid #e5e7eb; border-left: 4px solid var(--cor); border-radius: 8px;
@@ -704,38 +670,27 @@
           background: #b91c1c; color: #fff; font-size: 11px; font-weight: bold;
         }
       </style>
-      <div class="balao" role="status" aria-live="polite">
-        <button class="fechar" title="Fechar">×</button>
-        <div class="cabecalho"></div>
-        <div class="icone"></div>
-        <div class="titulo"></div>
-        <div class="etiqueta"></div>
-        <table class="extras"></table>
-        <div class="detalhe"></div>
-        <ul class="lista"></ul>
-        <div class="fila"></div>
-      </div>
       <div class="paineis">
         <section class="painel conferencia">
           <header><span class="tit-conf">Conferência da proposta</span><span class="seta">▾</span></header>
           <div class="corpo"></div>
         </section>
         <section class="painel historico">
-          <header><span>Etiquetas verificadas (<span class="qtd">0</span>)</span><span class="seta">▾</span></header>
+          <header>
+            <span><span>Etiquetas verificadas (<span class="qtd">0</span>)</span><span class="status"></span></span>
+            <span class="seta">▾</span>
+          </header>
           <ul class="corpo"></ul>
         </section>
       </div>
     `;
 
     const $ = (s) => raiz.querySelector(s);
-    const balao = $('.balao');
     const historico = $('.historico');
     const conferencia = $('.conferencia');
-    let timerOcultar = null;
 
     // Não roubar o foco do campo de etiquetas ao clicar nos elementos da extensão.
     raiz.addEventListener('mousedown', (e) => e.preventDefault());
-    $('.fechar').addEventListener('click', () => ocultar());
     for (const painel of [historico, conferencia]) {
       painel.querySelector('header').addEventListener('click', () => {
         painel.classList.toggle('recolhido');
@@ -754,54 +709,20 @@
       return s;
     }
 
-    function htmlExtras(extras) {
-      return (extras || []).map((e) =>
-        `<tr><th>${escaparHtml(e.titulo)}:</th>` +
-        (e.valor ? `<td>${escaparHtml(e.valor)}</td>` : '<td class="vazio">não encontrado</td>') +
-        '</tr>'
-      ).join('');
-    }
-
-    const CABECALHO_PADRAO = `Verificação: ${CONFIG.TEXTO_INTERACAO}`;
     const marcados = new Map(); // etiqueta -> <li> mais recente no histórico
 
-    function mostrar({ status, titulo, codigo, detalhe, lista, extras, restantes }) {
-      anexar();
-      $('.cabecalho').textContent = CABECALHO_PADRAO;
-      const s = aplicarEstilo(balao, status);
-      $('.icone').innerHTML = status === 'consultando'
-        ? `<span class="girando">${s.icone}</span>`
-        : s.icone;
-      $('.titulo').textContent = titulo;
-      $('.etiqueta').innerHTML = codigo ? `Etiqueta: <b>${escaparHtml(codigo)}</b>` : '';
-      $('.extras').innerHTML = htmlExtras(extras);
-      $('.detalhe').textContent = detalhe || '';
-      $('.lista').innerHTML = (lista || []).map((t, i) => `<li>${i + 1}. ${escaparHtml(t)}</li>`).join('');
-      $('.fila').textContent = restantes ? `${restantes} etiqueta(s) aguardando consulta` : '';
-      balao.classList.add('visivel');
-      clearTimeout(timerOcultar);
-    }
-
-    function ocultar() {
-      clearTimeout(timerOcultar);
-      balao.classList.remove('visivel');
-    }
-
     return {
-      mostrarConsultando(codigo) {
-        mostrar({
-          status: 'consultando',
-          titulo: 'Consultando rastreamento…',
-          codigo,
-          detalhe: 'Buscando na tela de estoque de mercadoria.',
-          restantes: fila.length,
-        });
-      },
-      mostrarResultado(r, restantes) {
-        mostrar({ ...r, restantes });
-        if (CONFIG.TEMPO_BALAO_MS > 0 && !restantes) {
-          timerOcultar = setTimeout(ocultar, CONFIG.TEMPO_BALAO_MS);
+      /** Indicador discreto de consulta em andamento (null = nenhuma). */
+      consultando(codigo, restantes) {
+        const status = $('.status');
+        if (!codigo) {
+          status.innerHTML = '';
+          return;
         }
+        anexar();
+        historico.classList.add('ativo');
+        status.innerHTML = `<span class="girando">⏳</span> consultando ${escaparHtml(codigo)}` +
+          (restantes ? ` (+${restantes} na fila)` : '');
       },
       atualizarConferencia({ invalidos, validos, total, expandir }) {
         anexar();
@@ -836,11 +757,6 @@
           } else if (!codigos.has(codigo) && selo) {
             selo.remove();
           }
-        }
-      },
-      atualizarFila(n) {
-        if (balao.classList.contains('visivel')) {
-          $('.fila').textContent = n ? `${n} etiqueta(s) aguardando consulta` : '';
         }
       },
       adicionarHistorico(r) {
@@ -1053,7 +969,7 @@
         });
         console.info('[Triagem RMA] Conferência da proposta:', { bipadas, validas: [...validas.keys()], invalidas });
         for (const c of invalidas) {
-          if (!resultados.has(c) && !naFila(c)) enfileirar(c, { silencioso: true });
+          if (!resultados.has(c) && !naFila(c)) enfileirar(c);
         }
         render(true);
       },
