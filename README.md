@@ -35,6 +35,8 @@ Depois de alterar algum arquivo, clique no botão ↻ da extensão em `chrome://
 
 - **Consulta direta (padrão):** a extensão abre a tela de estoque em segundo plano, identifica o
   formulário e o campo de etiqueta automaticamente e envia a etiqueta usando a sessão já logada.
+  A tela de estoque é montada com `<frameset>` (frame `?funcao=topo_conteudo` + frame `conteudo_meio`);
+  a extensão entra nos frames para achar o campo e o rastreamento.
 - **Iframe oculto (reserva):** se a tela de estoque carregar o rastreamento via JavaScript, a
   extensão abre a tela num iframe invisível, preenche o campo e aguarda o rastreamento aparecer.
 

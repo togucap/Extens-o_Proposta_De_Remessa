@@ -170,10 +170,19 @@
     }
 
     const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.urlOrigem = resp.url || url;
     if (doc.querySelector('input[type="password"]') && !doc.querySelector('#rastreamento')) {
       throw new Error('Sessão expirada: faça login novamente no manager.');
     }
     return doc;
+  }
+
+  /** Endereços dos frames/iframes de um documento (a tela de estoque usa <frameset>). */
+  function enderecosDosFrames(doc) {
+    return Array.from(doc.querySelectorAll('frame[src], iframe[src]'))
+      .map((fr) => fr.getAttribute('src'))
+      .filter((src) => src && !/^(about|javascript|data):/i.test(src))
+      .map((src) => new URL(src, doc.urlOrigem).href);
   }
 
   /** Encontra o campo de etiqueta na tela de estoque. */
@@ -183,7 +192,7 @@
     }
     const candidatos = Array.from(doc.querySelectorAll(
       'textarea, input[type="text"], input[type="search"], input[type="number"], input:not([type])'
-    ));
+    )).filter((el) => el.name || el.id);
     let melhor = null;
     let melhorPontos = 0;
     for (const el of candidatos) {
@@ -206,15 +215,33 @@
     return campo.form || campo.closest('form');
   }
 
+  /** Procura o campo de etiqueta na página e, se for um frameset, dentro dos frames. */
+  async function localizarCampoEstoque(url, profundidade = 0) {
+    const doc = await baixarDocumento(url);
+    const campo = encontrarCampoEtiqueta(doc);
+    if (campo && campo.name) return { doc, campo };
+    if (profundidade >= 3) return null;
+    for (const src of enderecosDosFrames(doc)) {
+      try {
+        const achou = await localizarCampoEstoque(src, profundidade + 1);
+        if (achou) return achou;
+      } catch (e) {
+        if (/Sessão expirada/.test(e.message)) throw e;
+        console.warn('[Triagem RMA] Falha ao abrir frame', src, e);
+      }
+    }
+    return null;
+  }
+
   let formularioCache = null;
 
   /** Descobre o formulário de busca da tela de estoque (campos, método e action). */
   async function obterFormularioEstoque() {
     if (formularioCache) return formularioCache;
 
-    const doc = await baixarDocumento(CONFIG.URL_ESTOQUE);
-    const campo = encontrarCampoEtiqueta(doc);
-    if (!campo || !campo.name) throw new Error('Campo de etiqueta não encontrado na tela de estoque.');
+    const achou = await localizarCampoEstoque(CONFIG.URL_ESTOQUE);
+    if (!achou) throw new Error('Campo de etiqueta não encontrado na tela de estoque.');
+    const { doc, campo } = achou;
 
     const form = formularioDo(campo);
     const fixos = [];
@@ -239,13 +266,29 @@
     }
 
     formularioCache = {
-      action: new URL((form && form.getAttribute('action')) || CONFIG.URL_ESTOQUE, CONFIG.URL_ESTOQUE).href,
+      action: new URL((form && form.getAttribute('action')) || doc.urlOrigem, doc.urlOrigem).href,
       method: ((form && form.getAttribute('method')) || 'GET').toUpperCase(),
       multipart: !!form && /multipart/i.test(form.getAttribute('enctype') || ''),
       nomeCampo: campo.name,
       fixos,
     };
+    console.info('[Triagem RMA] Formulário da tela de estoque detectado:', formularioCache);
     return formularioCache;
+  }
+
+  /** Analisa o documento e, se o rastreamento estiver dentro de frames, abre os frames. */
+  async function analisarComFrames(doc, profundidade = 0) {
+    const analise = analisarRastreamento(doc);
+    if (analise || profundidade >= 3) return analise;
+    for (const src of enderecosDosFrames(doc)) {
+      try {
+        const r = await analisarComFrames(await baixarDocumento(src), profundidade + 1);
+        if (r) return r;
+      } catch (e) {
+        console.warn('[Triagem RMA] Falha ao abrir frame', src, e);
+      }
+    }
+    return null;
   }
 
   /** Estratégia 1: requisição direta (rápida, sem abrir a tela). */
@@ -258,12 +301,24 @@
       corpo.set(f.nomeCampo, codigo);
       doc = await baixarDocumento(f.action, { method: 'POST', body: corpo });
     } else {
+      // Em formulários GET o navegador substitui toda a query string da action.
       const url = new URL(f.action);
+      url.search = '';
       for (const [k, v] of f.fixos) url.searchParams.append(k, v);
       url.searchParams.set(f.nomeCampo, codigo);
       doc = await baixarDocumento(url.href);
     }
-    return analisarRastreamento(doc);
+    return analisarComFrames(doc);
+  }
+
+  /** Todos os documentos de uma janela, incluindo frames aninhados. */
+  function documentosDe(win, lista = []) {
+    let doc = null;
+    try { doc = win.document; } catch (e) { return lista; }
+    if (!doc) return lista;
+    lista.push(doc);
+    for (let i = 0; i < win.frames.length; i++) documentosDe(win.frames[i], lista);
+    return lista;
   }
 
   /** Estratégia 2: abre a tela de estoque num iframe oculto e preenche o campo. */
@@ -274,23 +329,31 @@
     iframe.style.cssText =
       'position:fixed;left:-10000px;top:-10000px;width:1024px;height:768px;opacity:0;pointer-events:none;border:0;';
 
-    const carregou = () => new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('Tempo esgotado ao abrir a tela de estoque.')), CONFIG.TIMEOUT_CONSULTA_MS);
-      iframe.addEventListener('load', () => { clearTimeout(t); resolve(); }, { once: true });
-    });
-
     try {
-      const primeiroLoad = carregou();
       iframe.src = CONFIG.URL_ESTOQUE;
       document.body.appendChild(iframe);
-      await primeiroLoad;
 
-      const doc0 = iframe.contentDocument;
-      const campo = encontrarCampoEtiqueta(doc0);
-      if (!campo) throw new Error('Campo de etiqueta não encontrado na tela de estoque.');
+      // Aguarda o campo aparecer (em qualquer frame).
+      const inicio = Date.now();
+      let campo = null;
+      while (!campo) {
+        if (Date.now() - inicio > CONFIG.TIMEOUT_CONSULTA_MS) {
+          throw new Error('Campo de etiqueta não encontrado na tela de estoque.');
+        }
+        await dormir(300);
+        for (const d of documentosDe(iframe.contentWindow)) {
+          if (d.readyState === 'loading' || d.URL === 'about:blank') continue;
+          const c = encontrarCampoEtiqueta(d);
+          if (c) { campo = c; break; }
+        }
+      }
 
-      const antes = doc0.querySelector('#rastreamento');
-      const textoAntes = antes ? antes.textContent : null;
+      const docsAntes = new Set(documentosDe(iframe.contentWindow));
+      const textoAntes = new Map();
+      for (const d of docsAntes) {
+        const t = d.querySelector('#rastreamento');
+        textoAntes.set(d, t ? t.textContent : null);
+      }
 
       campo.value = codigo;
       campo.dispatchEvent(new Event('input', { bubbles: true }));
@@ -306,24 +369,26 @@
         }
       }
 
-      const inicio = Date.now();
+      const enviado = Date.now();
       let semTabelaDesde = null;
-      while (Date.now() - inicio < CONFIG.TIMEOUT_CONSULTA_MS) {
+      while (Date.now() - enviado < CONFIG.TIMEOUT_CONSULTA_MS) {
         await dormir(300);
-        let doc;
-        try { doc = iframe.contentDocument; } catch (e) { doc = null; }
-        if (!doc || doc.readyState === 'loading') continue;
-
-        const tabela = doc.querySelector('#rastreamento');
-        const novo = doc !== doc0 || !tabela || tabela.textContent !== textoAntes;
-        if (tabela && novo) {
-          const analise = analisarRastreamento(doc);
+        const docs = documentosDe(iframe.contentWindow);
+        for (const d of docs) {
+          const tabela = d.querySelector('#rastreamento');
+          if (!tabela || d.readyState === 'loading') continue;
+          if (docsAntes.has(d) && tabela.textContent === textoAntes.get(d)) continue;
+          const analise = analisarRastreamento(d);
           if (analise && analise.totalInteracoes > 0) return analise;
         }
-        // Página nova carregou mas sem rastreamento: etiqueta inexistente.
-        if (doc !== doc0 && doc.readyState === 'complete' && !tabela) {
+        // Algum frame carregou uma página nova, tudo terminou de carregar e não há rastreamento.
+        const carregando = docs.some((d) => d.readyState !== 'complete');
+        const temNovo = docs.some((d) => !docsAntes.has(d) && d.URL !== 'about:blank');
+        if (temNovo && !carregando) {
           semTabelaDesde = semTabelaDesde || Date.now();
-          if (Date.now() - semTabelaDesde > 2000) return null;
+          if (Date.now() - semTabelaDesde > 3000) return null;
+        } else {
+          semTabelaDesde = null;
         }
       }
       throw new Error('Tempo esgotado aguardando o rastreamento na tela de estoque.');
