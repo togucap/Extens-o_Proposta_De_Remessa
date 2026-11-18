@@ -24,6 +24,20 @@ A extensão **apenas avisa**: não bloqueia nem altera nada na tela de proposta 
 
 No canto inferior direito fica um histórico das últimas etiquetas verificadas.
 
+## Conferência da proposta (botão `#id_submit_button`)
+
+Ao clicar no botão que gera a listagem de produtos, a extensão espera a tabela aparecer em
+`#listagem-produtos-filtrado` e compara com as etiquetas bipadas no campo:
+
+- As etiquetas que **não aparecem** na tabela (não atendem aos critérios da proposta) ficam
+  **destacadas em vermelho no próprio campo de bipagem**, com o **Produto** e o **Final** ao lado.
+- O balão central mostra quantas e quais etiquetas ficaram de fora, com Produto e Final.
+- O painel da extensão (canto inferior direito) ganha a seção **"Não aparecem na proposta"** e
+  as etiquetas recebem o selo **NÃO APARECE NA PROPOSTA**.
+- Se todas aparecerem, o balão fica verde e some sozinho.
+
+Nada é bloqueado ou alterado no campo: o destaque é uma camada desenhada por cima dele.
+
 ## Instalação ("Carregar sem compactação")
 
 1. Baixe/clone este repositório para uma pasta do computador.
@@ -57,6 +71,8 @@ No início do `content.js` há o objeto `CONFIG`:
 | `NOME_CAMPO_ESTOQUE` | `null` | `name` do campo de etiqueta na tela de estoque (`null` = detecta sozinho) |
 | `TEXTO_INTERACAO` | `RMA - Registrado Triagem` | Interação procurada |
 | `CAMPOS_EXTRAS` | Produto, Final | Rótulos lidos na tela de estoque e exibidos no resumo |
+| `SELETOR_BOTAO_VERIFICAR` | `#id_submit_button` | Botão que gera a listagem da proposta |
+| `SELETOR_LISTAGEM` | `#listagem-produtos-filtrado` | Onde a listagem aparece |
 | `ESPERA_FIM_LEITURA_MS` | `700` | Espera para leitores sem ENTER |
 | `TEMPO_BALAO_MS` | `6000` | Tempo do balão na tela (`0` = só fecha no ×) |
 | `TIMEOUT_CONSULTA_MS` | `20000` | Tempo máximo de cada consulta |

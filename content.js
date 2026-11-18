@@ -52,6 +52,12 @@
 
     // Quantidade de etiquetas mantidas no histórico (canto inferior direito).
     MAX_HISTORICO: 30,
+
+    // Botão que gera a listagem de produtos válidos para a proposta.
+    SELETOR_BOTAO_VERIFICAR: '#id_submit_button',
+
+    // Área onde a listagem de produtos válidos aparece.
+    SELETOR_LISTAGEM: '#listagem-produtos-filtrado',
   };
 
   // ---------------------------------------------------------------------------
@@ -495,21 +501,28 @@
   // ---------------------------------------------------------------------------
   const fila = [];
   let emProcessamento = null;
+  const resultados = new Map(); // etiqueta -> último resultado da consulta
+  const silenciosas = new Set(); // etiquetas consultadas sem abrir o balão
 
-  function enfileirar(codigo) {
+  function enfileirar(codigo, { silencioso = false } = {}) {
     if (codigo === emProcessamento || fila.includes(codigo)) return;
+    if (silencioso) silenciosas.add(codigo);
+    else silenciosas.delete(codigo);
     fila.push(codigo);
     ui.atualizarFila(fila.length);
     processarFila();
   }
+
+  const naFila = (codigo) => codigo === emProcessamento || fila.includes(codigo);
 
   async function processarFila() {
     if (emProcessamento !== null) return;
     while (fila.length) {
       const codigo = fila.shift();
       emProcessamento = codigo;
+      const silencioso = silenciosas.delete(codigo);
       ui.atualizarFila(fila.length);
-      ui.mostrarConsultando(codigo);
+      if (!silencioso) ui.mostrarConsultando(codigo);
 
       let resultado;
       try {
@@ -523,9 +536,11 @@
         resultado = { codigo, status: 'erro', titulo: 'Erro na consulta', detalhe: e.message || String(e) };
       }
 
-      ui.mostrarResultado(resultado, fila.length);
+      resultados.set(codigo, resultado);
+      if (!silencioso) ui.mostrarResultado(resultado, fila.length);
       ui.adicionarHistorico(resultado);
       emProcessamento = null;
+      comparacao.atualizar();
     }
   }
 
@@ -592,6 +607,8 @@
       nao_encontrado: { cor: '#b91c1c', fundo: '#fef2f2', icone: '✖' },
       sem_rastreamento: { cor: '#b91c1c', fundo: '#fef2f2', icone: '✖' },
       erro: { cor: '#4b5563', fundo: '#f3f4f6', icone: '!' },
+      proposta_ok: { cor: '#15803d', fundo: '#f0fdf4', icone: '✔' },
+      proposta_falha: { cor: '#b91c1c', fundo: '#fef2f2', icone: '✖' },
     };
 
     const host = document.createElement('div');
@@ -651,10 +668,21 @@
         .historico li .cod { font-family: Consolas, monospace; font-weight: bold; }
         .historico li .res { color: var(--cor); }
         .historico li .det { color: #6b7280; }
+        .historico li .selo {
+          display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 4px;
+          background: #b91c1c; color: #fff; font-size: 11px; font-weight: bold;
+        }
+        .invalidas { display: none; border-bottom: 2px solid #b91c1c; background: #fef2f2; max-height: 22vh; overflow-y: auto; }
+        .invalidas.ativo { display: block; }
+        .historico.recolhido .invalidas { display: none; }
+        .invalidas .tit { padding: 6px 10px; font-weight: bold; color: #b91c1c; }
+        .invalidas .item { padding: 4px 10px 6px; border-top: 1px solid #fecaca; }
+        .invalidas .item .cod { font-family: Consolas, monospace; font-weight: bold; color: #b91c1c; }
+        .invalidas .item .det { color: #374151; }
       </style>
       <div class="balao" role="status" aria-live="polite">
         <button class="fechar" title="Fechar">×</button>
-        <div class="cabecalho">Verificação: ${escaparHtml(CONFIG.TEXTO_INTERACAO)}</div>
+        <div class="cabecalho"></div>
         <div class="icone"></div>
         <div class="titulo"></div>
         <div class="etiqueta"></div>
@@ -665,6 +693,7 @@
       </div>
       <div class="historico">
         <header><span>Etiquetas verificadas (<span class="qtd">0</span>)</span><span class="seta">▾</span></header>
+        <div class="invalidas"></div>
         <ul></ul>
       </div>
     `;
@@ -701,14 +730,20 @@
       ).join('');
     }
 
-    function mostrar({ status, titulo, codigo, detalhe, lista, extras, restantes }) {
+    const CABECALHO_PADRAO = `Verificação: ${CONFIG.TEXTO_INTERACAO}`;
+    const marcados = new Map(); // etiqueta -> <li> mais recente no histórico
+    let modo = null; // 'etiqueta' ou 'comparacao'
+
+    function mostrar({ status, titulo, codigo, detalhe, lista, extras, restantes, cabecalho }) {
       anexar();
+      modo = cabecalho ? 'comparacao' : 'etiqueta';
+      $('.cabecalho').textContent = cabecalho || CABECALHO_PADRAO;
       const s = aplicarEstilo(balao, status);
       $('.icone').innerHTML = status === 'consultando'
         ? `<span class="girando">${s.icone}</span>`
         : s.icone;
       $('.titulo').textContent = titulo;
-      $('.etiqueta').innerHTML = `Etiqueta: <b>${escaparHtml(codigo)}</b>`;
+      $('.etiqueta').innerHTML = codigo ? `Etiqueta: <b>${escaparHtml(codigo)}</b>` : '';
       $('.extras').innerHTML = htmlExtras(extras);
       $('.detalhe').textContent = detalhe || '';
       $('.lista').innerHTML = (lista || []).map((t, i) => `<li>${i + 1}. ${escaparHtml(t)}</li>`).join('');
@@ -738,8 +773,38 @@
           timerOcultar = setTimeout(ocultar, CONFIG.TEMPO_BALAO_MS);
         }
       },
+      mostrarComparacao(r, { atualizarSeVisivel = false } = {}) {
+        const visivel = balao.classList.contains('visivel') && modo === 'comparacao';
+        if (atualizarSeVisivel && !visivel) return;
+        mostrar({ ...r, cabecalho: 'Conferência da proposta de remessa' });
+        if (CONFIG.TEMPO_BALAO_MS > 0 && r.status === 'proposta_ok') {
+          timerOcultar = setTimeout(ocultar, CONFIG.TEMPO_BALAO_MS);
+        }
+      },
+      atualizarInvalidas(itens) {
+        anexar();
+        const caixa = $('.invalidas');
+        caixa.classList.toggle('ativo', itens.length > 0);
+        if (itens.length) historico.classList.add('ativo');
+        caixa.innerHTML =
+          `<div class="tit">⚠ Não aparecem na proposta (${itens.length})</div>` +
+          itens.map((i) =>
+            `<div class="item"><span class="cod">${escaparHtml(i.codigo)}</span>` +
+            `<div class="det">Produto: ${escaparHtml(i.produto)}</div>` +
+            `<div class="det">Final: ${escaparHtml(i.final)}</div></div>`
+          ).join('');
+        const codigos = new Set(itens.map((i) => i.codigo));
+        for (const [codigo, li] of marcados) {
+          const selo = li.querySelector('.selo');
+          if (codigos.has(codigo) && !selo) {
+            li.insertAdjacentHTML('beforeend', '<div class="selo">NÃO APARECE NA PROPOSTA</div>');
+          } else if (!codigos.has(codigo) && selo) {
+            selo.remove();
+          }
+        }
+      },
       atualizarFila(n) {
-        if (balao.classList.contains('visivel')) {
+        if (balao.classList.contains('visivel') && modo === 'etiqueta') {
           $('.fila').textContent = n ? `${n} etiqueta(s) aguardando consulta` : '';
         }
       },
@@ -755,13 +820,258 @@
           (r.extras || []).filter((e) => e.valor)
             .map((e) => `<div class="det">${escaparHtml(e.titulo)}: ${escaparHtml(e.valor)}</div>`).join('') +
           (r.ocorrencias || []).map((o) => `<div class="det">Triagem: ${escaparHtml(o.data)} ${escaparHtml(o.hora)}</div>`).join('');
+        const anterior = marcados.get(r.codigo);
+        if (anterior && anterior.querySelector('.selo')) {
+          li.insertAdjacentHTML('beforeend', '<div class="selo">NÃO APARECE NA PROPOSTA</div>');
+        }
+        marcados.set(r.codigo, li);
         const ul = historico.querySelector('ul');
         ul.prepend(li);
-        while (ul.children.length > CONFIG.MAX_HISTORICO) ul.lastElementChild.remove();
+        while (ul.children.length > CONFIG.MAX_HISTORICO) {
+          const ultimo = ul.lastElementChild;
+          for (const [c, el] of marcados) if (el === ultimo) marcados.delete(c);
+          ultimo.remove();
+        }
         $('.qtd').textContent = ul.children.length;
       },
     };
   })();
+
+  // ---------------------------------------------------------------------------
+  // Destaque no campo de etiquetas (camada desenhada por cima do textarea)
+  // ---------------------------------------------------------------------------
+  const destaque = (() => {
+    const host = document.createElement('div');
+    host.id = 'kbm-triagem-destaque';
+    host.style.cssText = 'all: initial; position: fixed; z-index: 999; pointer-events: none; display: none;';
+    const raiz = host.attachShadow({ mode: 'open' });
+    raiz.innerHTML = `
+      <style>
+        :host { all: initial; }
+        .camada {
+          position: absolute; inset: 0; overflow: hidden; box-sizing: border-box;
+          border-style: solid; border-color: transparent; border-radius: 4px;
+        }
+        .camada.alerta { box-shadow: inset 0 0 0 2px #dc2626; }
+        .conteudo { position: relative; }
+        .linha { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+        .cod { color: transparent; }
+        .invalida .cod { background: rgba(220, 38, 38, .30); box-shadow: 0 0 0 1px rgba(220, 38, 38, .8); border-radius: 2px; }
+        .nota { color: #b91c1c; font-weight: bold; font-size: .85em; margin-left: .8em; }
+      </style>
+      <div class="camada"><div class="conteudo"></div></div>
+    `;
+    const camada = raiz.querySelector('.camada');
+    const conteudo = raiz.querySelector('.conteudo');
+
+    let notas = new Map(); // etiqueta -> texto exibido ao lado dela
+    let assinatura = '';
+    let rodando = false;
+
+    function copiarEstilo(campo) {
+      const cs = getComputedStyle(campo);
+      for (const prop of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'textAlign',
+        'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+        'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']) {
+        camada.style[prop] = cs[prop];
+      }
+      const lh = cs.lineHeight === 'normal' ? parseFloat(cs.fontSize) * 1.2 : parseFloat(cs.lineHeight);
+      camada.style.lineHeight = `${lh}px`;
+      // Barra de rolagem vertical do textarea.
+      const barra = campo.offsetWidth - campo.clientWidth
+        - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+      camada.style.paddingRight = `${parseFloat(cs.paddingRight) + Math.max(0, barra)}px`;
+      return lh;
+    }
+
+    function desenhar(campo) {
+      const lh = copiarEstilo(campo);
+      conteudo.style.transform = `translate(${-campo.scrollLeft}px, ${-campo.scrollTop}px)`;
+      let algumaInvalida = false;
+      conteudo.innerHTML = (campo.value || '').split('\n').map((linha) => {
+        const chave = linha.replace(/[\r\t]/g, '').trim();
+        const nota = chave && notas.get(chave);
+        if (nota) algumaInvalida = true;
+        const cod = `<span class="cod">${escaparHtml(linha.replace(/\r/g, '')) || ' '}</span>`;
+        return nota
+          ? `<div class="linha invalida" style="height:${lh}px">${cod}<span class="nota">⚠ ${escaparHtml(nota)}</span></div>`
+          : `<div class="linha" style="height:${lh}px">${cod}</div>`;
+      }).join('');
+      camada.classList.toggle('alerta', algumaInvalida);
+    }
+
+    function quadro() {
+      if (!notas.size) {
+        rodando = false;
+        host.style.display = 'none';
+        return;
+      }
+      const campo = document.querySelector(CONFIG.SELETOR_CAMPO_ORIGEM);
+      const r = campo && campo.getBoundingClientRect();
+      if (!r || !r.width || !r.height) {
+        host.style.display = 'none';
+      } else {
+        if (!host.isConnected) (document.body || document.documentElement).appendChild(host);
+        Object.assign(host.style, {
+          display: 'block', top: `${r.top}px`, left: `${r.left}px`, width: `${r.width}px`, height: `${r.height}px`,
+        });
+        const nova = [campo.value, campo.scrollTop, campo.scrollLeft, r.width, r.height].join('|');
+        if (nova !== assinatura) {
+          assinatura = nova;
+          desenhar(campo);
+        }
+      }
+      requestAnimationFrame(quadro);
+    }
+
+    return {
+      definir(mapa) {
+        notas = mapa;
+        assinatura = '';
+        if (notas.size && !rodando) {
+          rodando = true;
+          requestAnimationFrame(quadro);
+        }
+      },
+    };
+  })();
+
+  // ---------------------------------------------------------------------------
+  // Conferência: etiquetas bipadas x listagem gerada pelo botão #id_submit_button
+  // ---------------------------------------------------------------------------
+  function codigosDoCampo() {
+    const campo = document.querySelector(CONFIG.SELETOR_CAMPO_ORIGEM);
+    const lista = ((campo && campo.value) || '').split(/[\r\n\t]+/).map((c) => c.trim()).filter(Boolean);
+    return Array.from(new Set(lista));
+  }
+
+  /** Etiquetas presentes na listagem (coluna "Etiqueta" + valor dos checkboxes). */
+  function etiquetasDaListagem(container) {
+    const validas = new Set();
+    const tabela = container.querySelector('table');
+    if (tabela) {
+      const cabecalhos = Array.from(tabela.querySelectorAll('thead th, thead td'));
+      const idx = cabecalhos.findIndex((th) => normalizar(th.textContent) === 'etiqueta');
+      for (const tr of tabela.querySelectorAll('tbody tr')) {
+        const tds = tr.querySelectorAll(':scope > td, :scope > th');
+        if (idx >= 0 && tds[idx]) validas.add(textoLimpo(tds[idx]));
+      }
+    }
+    for (const cb of container.querySelectorAll('input[name="produto_serie_etiqueta[]"], input.checkbox-produto')) {
+      if (cb.value) validas.add(cb.value.trim());
+    }
+    return validas;
+  }
+
+  const valorExtra = (r, titulo) => {
+    const e = r && (r.extras || []).find((x) => x.titulo === titulo);
+    return (e && e.valor) || '';
+  };
+
+  const comparacao = (() => {
+    let invalidas = [];
+    let total = 0;
+
+    function itensInvalidos() {
+      return invalidas.map((codigo) => {
+        const r = resultados.get(codigo);
+        if (!r) {
+          return { codigo, produto: 'consultando…', final: 'consultando…' };
+        }
+        return {
+          codigo,
+          produto: valorExtra(r, 'Produto') || 'não encontrado',
+          final: valorExtra(r, 'Final') || 'não encontrado',
+        };
+      });
+    }
+
+    function render(apenasAtualizar) {
+      const itens = itensInvalidos();
+      destaque.definir(new Map(itens.map((i) => [i.codigo, `${i.produto} | Final: ${i.final}`])));
+      ui.atualizarInvalidas(itens);
+      if (!total) return;
+      const r = itens.length
+        ? {
+            status: 'proposta_falha',
+            titulo: `${itens.length} de ${total} etiqueta(s) não aparecem na proposta`,
+            detalhe: 'Não atendem aos critérios da proposta de remessa:',
+            lista: itens.map((i) => `${i.codigo} — ${i.produto} — Final: ${i.final}`),
+          }
+        : {
+            status: 'proposta_ok',
+            titulo: `Todas as ${total} etiqueta(s) aparecem na proposta`,
+            detalhe: '',
+          };
+      ui.mostrarComparacao(r, { atualizarSeVisivel: apenasAtualizar });
+    }
+
+    return {
+      comparar(container, bipadas) {
+        const validas = new Set(Array.from(etiquetasDaListagem(container), (c) => c.toUpperCase()));
+        total = bipadas.length;
+        invalidas = bipadas.filter((c) => !validas.has(c.toUpperCase()));
+        console.info('[Triagem RMA] Conferência da proposta:', { bipadas, validas: [...validas], invalidas });
+        for (const c of invalidas) {
+          if (!resultados.has(c) && !naFila(c)) enfileirar(c, { silencioso: true });
+        }
+        render(false);
+      },
+      /** Chamado quando chega o resultado de uma consulta (para preencher Produto/Final). */
+      atualizar() {
+        if (invalidas.length) render(true);
+      },
+    };
+  })();
+
+  // Detecta o clique no botão e o aparecimento/atualização da listagem.
+  let aguardandoListagem = false;
+  let bipadasNoClique = [];
+  let assinaturaNoClique = null;
+  let momentoClique = 0;
+  let assinaturaListagem = null;
+  let timerListagem = null;
+
+  function verificarListagem() {
+    const container = document.querySelector(CONFIG.SELETOR_LISTAGEM);
+    if (!container) return;
+    const texto = textoLimpo(container);
+    if (!container.querySelector('table') && !/Exibindo\s+\d+/i.test(texto)) return;
+    if (aguardandoListagem) {
+      // Ainda é a listagem anterior ao clique: espera a nova (até 3 s; depois aceita a mesma).
+      if (texto === assinaturaNoClique && Date.now() - momentoClique < 3000) {
+        clearTimeout(timerListagem);
+        timerListagem = setTimeout(verificarListagem, 500);
+        return;
+      }
+    } else if (texto === assinaturaListagem) {
+      return;
+    }
+    assinaturaListagem = texto;
+    aguardandoListagem = false;
+    const bipadas = codigosDoCampo();
+    comparacao.comparar(container, bipadas.length ? bipadas : bipadasNoClique);
+  }
+
+  document.addEventListener('click', (ev) => {
+    if (ev.target && ev.target.closest && ev.target.closest(CONFIG.SELETOR_BOTAO_VERIFICAR)) {
+      const container = document.querySelector(CONFIG.SELETOR_LISTAGEM);
+      aguardandoListagem = true;
+      bipadasNoClique = codigosDoCampo();
+      assinaturaNoClique = container ? textoLimpo(container) : null;
+      momentoClique = Date.now();
+      clearTimeout(timerListagem);
+      timerListagem = setTimeout(verificarListagem, 400);
+    }
+  }, true);
+
+  new MutationObserver(() => {
+    clearTimeout(timerListagem);
+    timerListagem = setTimeout(verificarListagem, 400);
+  }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+
+  // Caso a página já abra com a listagem (envio sem AJAX).
+  setTimeout(verificarListagem, 1000);
 
   console.info('[Triagem RMA] Extensão ativa na tela de Proposta de Remessa.');
 })();
