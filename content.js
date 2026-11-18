@@ -651,6 +651,7 @@
         }
         .conferencia .item .cod { font-family: Consolas, monospace; font-weight: bold; color: var(--cor); }
         .conferencia .item .det { color: #374151; }
+        .painel .det.final { font-weight: bold; font-size: 13px; color: #111827; }
         .conferencia .item .removida {
           display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 4px;
           background: #6b7280; color: #fff; font-size: 11px; font-weight: bold;
@@ -738,7 +739,7 @@
         const cartao = (i, status) =>
           `<div class="item" style="--cor:${ESTILOS[status].cor}"><span class="cod">${escaparHtml(i.codigo)}</span>` +
           `<div class="det">Produto: ${escaparHtml(i.produto)}</div>` +
-          `<div class="det">Final: ${escaparHtml(i.final)}</div>` +
+          `<div class="det final">Final: ${escaparHtml(i.final)}</div>` +
           (i.removida ? '<div class="removida">REMOVIDA DO CAMPO</div>' : '') + '</div>';
         conferencia.classList.add('ativo');
         conferencia.classList.toggle('falha', invalidos.length > 0);
@@ -775,7 +776,7 @@
           `<div><span class="cod">${escaparHtml(r.codigo)}</span> <span class="det">· ${hora}</span></div>` +
           `<div class="res">${escaparHtml(r.titulo)}</div>` +
           (r.extras || []).filter((e) => e.valor)
-            .map((e) => `<div class="det">${escaparHtml(e.titulo)}: ${escaparHtml(e.valor)}</div>`).join('') +
+            .map((e) => `<div class="det${e.titulo === 'Final' ? ' final' : ''}">${escaparHtml(e.titulo)}: ${escaparHtml(e.valor)}</div>`).join('') +
           (r.ocorrencias || []).map((o) => `<div class="det">Triagem: ${escaparHtml(o.data)} ${escaparHtml(o.hora)}</div>`).join('');
         const anterior = marcados.get(r.codigo);
         if (anterior && anterior.querySelector('.selo')) {
