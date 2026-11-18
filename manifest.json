@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Proposta de Remessa - Verificador de Triagem RMA",
+  "version": "1.0.0",
+  "description": "Ao bipar etiquetas na tela de Gerar Proposta de Remessa, consulta o rastreamento da mercadoria e verifica a data de 'RMA - Registrado Triagem'.",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://manager.kabum.com.br/cgi-local/rma/transferencia/proposta_remessa/gerar_proposta_remessa.cgi*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
