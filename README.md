@@ -22,7 +22,7 @@ Extensão do Google Chrome que roda na tela **Gerar Proposta de Remessa**
 | 🔴 Vermelho | Sem a interação "RMA - Registrado Triagem", ou etiqueta sem rastreamento |
 | ⚪ Cinza | Erro na consulta (ex.: sessão expirada) |
 
-A extensão **apenas avisa**: não bloqueia nem altera nada na tela de proposta de remessa.
+A extensão **não bloqueia** nada. A única alteração no campo é a feita pelo botão **Remover não encontrados**, quando você clica nele.
 
 No topo da tela, à direita, fica um painel com o histórico das últimas etiquetas verificadas.
 
@@ -41,7 +41,15 @@ Ao clicar no botão que gera a listagem de produtos, a extensão espera a tabela
   - Cada painel pode ser recolhido clicando no título.
 - Se todas aparecerem, o painel de conferência fica verde.
 
-Nada é bloqueado ou alterado no campo: o destaque é uma camada desenhada por cima dele.
+O destaque é uma camada desenhada por cima do campo (não altera o que está escrito nele).
+
+### Botão "Remover não encontrados"
+
+- Aparece **ao lado direito do campo Mercadoria** somente depois da conferência (botão Buscar) e
+  enquanto houver etiquetas destacadas em vermelho no campo. Mostra quantas serão removidas.
+- Acompanha o campo quando ele é **redimensionado** ou quando a tela rola.
+- Ao clicar, tira do campo **apenas** as etiquetas que não entraram na proposta; as demais ficam.
+- No painel de conferência, essas etiquetas recebem o selo **REMOVIDA DO CAMPO**.
 
 ## Instalação ("Carregar sem compactação")
 

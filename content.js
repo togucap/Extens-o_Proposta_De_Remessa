@@ -6,7 +6,8 @@
  * estoque de mercadoria. O rastreamento é lido de baixo para cima procurando a
  * interação "RMA - Registrado Triagem" (avisando quando houver mais de uma) e o
  * resultado, com Produto e Final, aparece no painel "Etiquetas verificadas".
- * A extensão apenas avisa: não bloqueia nem altera nada na tela.
+ * A extensão não bloqueia nada; só altera o campo quando o usuário clica em
+ * "Remover não encontrados".
  */
 (() => {
   'use strict';
@@ -650,6 +651,10 @@
         }
         .conferencia .item .cod { font-family: Consolas, monospace; font-weight: bold; color: var(--cor); }
         .conferencia .item .det { color: #374151; }
+        .conferencia .item .removida {
+          display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 4px;
+          background: #6b7280; color: #fff; font-size: 11px; font-weight: bold;
+        }
 
         .status { font-weight: normal; color: #1d4ed8; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .historico header > span:first-child { min-width: 0; display: flex; flex-direction: column; }
@@ -733,7 +738,8 @@
         const cartao = (i, status) =>
           `<div class="item" style="--cor:${ESTILOS[status].cor}"><span class="cod">${escaparHtml(i.codigo)}</span>` +
           `<div class="det">Produto: ${escaparHtml(i.produto)}</div>` +
-          `<div class="det">Final: ${escaparHtml(i.final)}</div></div>`;
+          `<div class="det">Final: ${escaparHtml(i.final)}</div>` +
+          (i.removida ? '<div class="removida">REMOVIDA DO CAMPO</div>' : '') + '</div>';
         conferencia.classList.add('ativo');
         conferencia.classList.toggle('falha', invalidos.length > 0);
         conferencia.classList.toggle('ok', invalidos.length === 0);
@@ -809,11 +815,51 @@
         .cod { color: transparent; }
         .invalida .cod { background: rgba(220, 38, 38, .30); box-shadow: 0 0 0 1px rgba(220, 38, 38, .8); border-radius: 2px; }
         .nota { color: #b91c1c; font-weight: bold; font-size: .85em; margin-left: .8em; }
+        /* Botão ao lado direito do campo: acompanha a posição e o redimensionamento. */
+        .remover {
+          position: absolute; top: 0; left: calc(100% + 12px);
+          display: none; pointer-events: auto; white-space: nowrap; cursor: pointer;
+          font: bold 13px/1.2 Arial, Helvetica, sans-serif; color: #fff;
+          background: #dc2626; border: 1px solid #b91c1c; border-radius: 4px;
+          padding: 7px 12px; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+        }
+        .remover:hover { background: #b91c1c; }
+        .remover:active { transform: translateY(1px); }
+        .remover.visivel { display: inline-block; }
       </style>
       <div class="camada"><div class="conteudo"></div></div>
+      <button type="button" class="remover" title="Remove do campo as etiquetas destacadas em vermelho">Remover não encontrados</button>
     `;
     const camada = raiz.querySelector('.camada');
     const conteudo = raiz.querySelector('.conteudo');
+    const botaoRemover = raiz.querySelector('.remover');
+    let aoRemover = () => {};
+
+    /** Remove do campo as linhas com etiquetas destacadas (não entraram na proposta). */
+    function removerNaoEncontrados() {
+      const campo = document.querySelector(CONFIG.SELETOR_CAMPO_ORIGEM);
+      if (!campo) return;
+      const removidas = [];
+      const linhas = (campo.value || '').split('\n').filter((linha) => {
+        const chave = linha.replace(/[\r\t]/g, '').trim();
+        if (chave && notas.has(chave)) {
+          removidas.push(chave);
+          return false;
+        }
+        return true;
+      });
+      if (!removidas.length) return;
+      // Mantém a quebra de linha no final para a próxima bipagem começar numa linha nova.
+      let novoValor = linhas.join('\n').replace(/\n{2,}$/, '\n');
+      if (novoValor.trim() && !novoValor.endsWith('\n')) novoValor += '\n';
+      campo.value = novoValor.trim() ? novoValor : '';
+      campo.dispatchEvent(new Event('input', { bubbles: true }));
+      campo.dispatchEvent(new Event('change', { bubbles: true }));
+      campo.focus();
+      console.info('[Triagem RMA] Etiquetas removidas do campo:', removidas);
+      aoRemover(removidas);
+    }
+    botaoRemover.addEventListener('click', removerNaoEncontrados);
 
     let notas = new Map(); // etiqueta -> texto exibido ao lado dela
     let assinatura = '';
@@ -838,17 +884,19 @@
     function desenhar(campo) {
       const lh = copiarEstilo(campo);
       conteudo.style.transform = `translate(${-campo.scrollLeft}px, ${-campo.scrollTop}px)`;
-      let algumaInvalida = false;
+      let invalidasNoCampo = 0;
       conteudo.innerHTML = (campo.value || '').split('\n').map((linha) => {
         const chave = linha.replace(/[\r\t]/g, '').trim();
         const nota = chave && notas.get(chave);
-        if (nota) algumaInvalida = true;
+        if (nota) invalidasNoCampo++;
         const cod = `<span class="cod">${escaparHtml(linha.replace(/\r/g, '')) || ' '}</span>`;
         return nota
           ? `<div class="linha invalida" style="height:${lh}px">${cod}<span class="nota">⚠ ${escaparHtml(nota)}</span></div>`
           : `<div class="linha" style="height:${lh}px">${cod}</div>`;
       }).join('');
-      camada.classList.toggle('alerta', algumaInvalida);
+      camada.classList.toggle('alerta', invalidasNoCampo > 0);
+      botaoRemover.classList.toggle('visivel', invalidasNoCampo > 0);
+      botaoRemover.textContent = `Remover não encontrados (${invalidasNoCampo})`;
     }
 
     function quadro() {
@@ -876,7 +924,8 @@
     }
 
     return {
-      definir(mapa) {
+      definir(mapa, { removidas } = {}) {
+        if (removidas) aoRemover = removidas;
         notas = mapa;
         assinatura = '';
         if (notas.size && !rodando) {
@@ -931,16 +980,24 @@
   const comparacao = (() => {
     let invalidas = [];
     let aprovadas = []; // [{ codigo, produto, final }] vindos da tabela da proposta
+    let removidas = new Set(); // etiquetas tiradas do campo pelo botão "Remover não encontrados"
+
+    function aoRemover(codigos) {
+      for (const c of codigos) removidas.add(c);
+      render(false);
+    }
     let total = 0;
 
     function itensInvalidos() {
       return invalidas.map((codigo) => {
         const r = resultados.get(codigo);
+        const removida = removidas.has(codigo);
         if (!r) {
-          return { codigo, produto: 'consultando…', final: 'consultando…' };
+          return { codigo, removida, produto: 'consultando…', final: 'consultando…' };
         }
         return {
           codigo,
+          removida,
           produto: valorExtra(r, 'Produto') || 'não encontrado',
           final: valorExtra(r, 'Final') || 'não encontrado',
         };
@@ -949,7 +1006,7 @@
 
     function render(nova) {
       const itens = itensInvalidos();
-      destaque.definir(new Map(itens.map((i) => [i.codigo, `${i.produto} | Final: ${i.final}`])));
+      destaque.definir(new Map(itens.map((i) => [i.codigo, `${i.produto} | Final: ${i.final}`])), { removidas: aoRemover });
       ui.atualizarConferencia({ invalidos: itens, validos: aprovadas, total, expandir: nova });
     }
 
@@ -957,6 +1014,7 @@
       comparar(container, bipadas) {
         const validas = etiquetasDaListagem(container);
         total = bipadas.length;
+        removidas = new Set();
         invalidas = bipadas.filter((c) => !validas.has(c.toUpperCase()));
         aprovadas = bipadas.filter((c) => validas.has(c.toUpperCase())).map((codigo) => {
           const t = validas.get(codigo.toUpperCase());
