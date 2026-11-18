@@ -646,14 +646,14 @@
         .extras .vazio { font-weight: normal; color: #9ca3af; font-style: italic; }
         .detalhe { font-size: 14px; margin-top: 8px; color: #374151; }
         .lista { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; color: #374151; }
-        .lista li { padding: 2px 0; }
+        .lista li { padding: 6px 10px; margin-top: 6px; background: rgba(255,255,255,.7); border-radius: 8px; border-left: 3px solid var(--cor); text-align: left; }
         .fila { font-size: 12px; margin-top: 10px; color: #6b7280; min-height: 14px; }
         .girando { display: inline-block; animation: girar 1s linear infinite; }
         @keyframes girar { to { transform: rotate(360deg); } }
 
         .historico {
           position: fixed; right: 12px; bottom: 12px; z-index: 2147483646;
-          width: 330px; max-height: 45vh; display: none; flex-direction: column;
+          width: 350px; max-height: 60vh; display: none; flex-direction: column;
           background: #fff; border: 1px solid #d1d5db; border-radius: 10px;
           box-shadow: 0 8px 24px rgba(0,0,0,.18); overflow: hidden; font-size: 12px; color: #111827;
         }
@@ -662,9 +662,14 @@
           display: flex; justify-content: space-between; align-items: center;
           padding: 6px 10px; background: #f3f4f6; font-weight: bold; cursor: pointer; user-select: none;
         }
-        .historico ul { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+        .historico ul { list-style: none; margin: 0; padding: 8px; overflow-y: auto; background: #f9fafb; }
         .historico.recolhido ul { display: none; }
-        .historico li { padding: 6px 10px; border-top: 1px solid #eee; border-left: 4px solid var(--cor); }
+        .historico li {
+          padding: 8px 10px; margin-bottom: 8px; line-height: 1.45;
+          background: #fff; border: 1px solid #e5e7eb; border-left: 4px solid var(--cor); border-radius: 8px;
+          box-shadow: 0 1px 2px rgba(0,0,0,.06);
+        }
+        .historico li:last-child { margin-bottom: 0; }
         .historico li .cod { font-family: Consolas, monospace; font-weight: bold; }
         .historico li .res { color: var(--cor); }
         .historico li .det { color: #6b7280; }
@@ -672,11 +677,16 @@
           display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 4px;
           background: #b91c1c; color: #fff; font-size: 11px; font-weight: bold;
         }
-        .invalidas { display: none; border-bottom: 2px solid #b91c1c; background: #fef2f2; max-height: 22vh; overflow-y: auto; }
+        .invalidas { display: none; border-bottom: 2px solid #b91c1c; background: #fef2f2; max-height: 28vh; overflow-y: auto; }
         .invalidas.ativo { display: block; }
         .historico.recolhido .invalidas { display: none; }
-        .invalidas .tit { padding: 6px 10px; font-weight: bold; color: #b91c1c; }
-        .invalidas .item { padding: 4px 10px 6px; border-top: 1px solid #fecaca; }
+        .invalidas { padding: 0 8px 8px; }
+        .invalidas .tit { padding: 8px 2px; font-weight: bold; color: #b91c1c; }
+        .invalidas .item {
+          padding: 8px 10px; margin-bottom: 8px; line-height: 1.45;
+          background: #fff; border: 1px solid #fecaca; border-left: 4px solid #b91c1c; border-radius: 8px;
+        }
+        .invalidas .item:last-child { margin-bottom: 0; }
         .invalidas .item .cod { font-family: Consolas, monospace; font-weight: bold; color: #b91c1c; }
         .invalidas .item .det { color: #374151; }
       </style>
