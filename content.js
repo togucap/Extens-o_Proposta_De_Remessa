@@ -652,13 +652,13 @@
         @keyframes girar { to { transform: rotate(360deg); } }
 
         .paineis {
-          position: fixed; right: 12px; bottom: 12px; z-index: 2147483646;
-          width: 350px; max-height: calc(100vh - 24px);
-          display: flex; flex-direction: column; gap: 18px;
+          position: fixed; top: 12px; right: 12px; z-index: 2147483646;
+          max-width: calc(100vw - 24px);
+          display: flex; flex-direction: row; align-items: flex-start; gap: 16px;
           font-size: 12px; color: #111827;
         }
         .painel {
-          display: none; flex-direction: column; min-height: 0;
+          width: 320px; display: none; flex-direction: column; min-height: 0;
           background: #fff; border: 1px solid #d1d5db; border-radius: 10px;
           box-shadow: 0 8px 24px rgba(0,0,0,.18); overflow: hidden;
         }
@@ -764,12 +764,10 @@
 
     const CABECALHO_PADRAO = `Verificação: ${CONFIG.TEXTO_INTERACAO}`;
     const marcados = new Map(); // etiqueta -> <li> mais recente no histórico
-    let modo = null; // 'etiqueta' ou 'comparacao'
 
-    function mostrar({ status, titulo, codigo, detalhe, lista, extras, restantes, cabecalho }) {
+    function mostrar({ status, titulo, codigo, detalhe, lista, extras, restantes }) {
       anexar();
-      modo = cabecalho ? 'comparacao' : 'etiqueta';
-      $('.cabecalho').textContent = cabecalho || CABECALHO_PADRAO;
+      $('.cabecalho').textContent = CABECALHO_PADRAO;
       const s = aplicarEstilo(balao, status);
       $('.icone').innerHTML = status === 'consultando'
         ? `<span class="girando">${s.icone}</span>`
@@ -805,16 +803,12 @@
           timerOcultar = setTimeout(ocultar, CONFIG.TEMPO_BALAO_MS);
         }
       },
-      mostrarComparacao(r, { atualizarSeVisivel = false } = {}) {
-        const visivel = balao.classList.contains('visivel') && modo === 'comparacao';
-        if (atualizarSeVisivel && !visivel) return;
-        mostrar({ ...r, cabecalho: 'Conferência da proposta de remessa' });
-        if (CONFIG.TEMPO_BALAO_MS > 0 && r.status === 'proposta_ok') {
-          timerOcultar = setTimeout(ocultar, CONFIG.TEMPO_BALAO_MS);
-        }
-      },
-      atualizarConferencia({ invalidos, validos, total }) {
+      atualizarConferencia({ invalidos, validos, total, expandir }) {
         anexar();
+        if (expandir) {
+          conferencia.classList.remove('recolhido');
+          conferencia.querySelector('.seta').textContent = '▾';
+        }
         const cartao = (i, status) =>
           `<div class="item" style="--cor:${ESTILOS[status].cor}"><span class="cod">${escaparHtml(i.codigo)}</span>` +
           `<div class="det">Produto: ${escaparHtml(i.produto)}</div>` +
@@ -845,7 +839,7 @@
         }
       },
       atualizarFila(n) {
-        if (balao.classList.contains('visivel') && modo === 'etiqueta') {
+        if (balao.classList.contains('visivel')) {
           $('.fila').textContent = n ? `${n} etiqueta(s) aguardando consulta` : '';
         }
       },
@@ -1037,24 +1031,10 @@
       });
     }
 
-    function render(apenasAtualizar) {
+    function render(nova) {
       const itens = itensInvalidos();
       destaque.definir(new Map(itens.map((i) => [i.codigo, `${i.produto} | Final: ${i.final}`])));
-      ui.atualizarConferencia({ invalidos: itens, validos: aprovadas, total });
-      if (!total) return;
-      const r = itens.length
-        ? {
-            status: 'proposta_falha',
-            titulo: `${itens.length} de ${total} etiqueta(s) não aparecem na proposta`,
-            detalhe: 'Não atendem aos critérios da proposta de remessa:',
-            lista: itens.map((i) => `${i.codigo} — ${i.produto} — Final: ${i.final}`),
-          }
-        : {
-            status: 'proposta_ok',
-            titulo: `Todas as ${total} etiqueta(s) aparecem na proposta`,
-            detalhe: '',
-          };
-      ui.mostrarComparacao(r, { atualizarSeVisivel: apenasAtualizar });
+      ui.atualizarConferencia({ invalidos: itens, validos: aprovadas, total, expandir: nova });
     }
 
     return {
@@ -1075,11 +1055,11 @@
         for (const c of invalidas) {
           if (!resultados.has(c) && !naFila(c)) enfileirar(c, { silencioso: true });
         }
-        render(false);
+        render(true);
       },
       /** Chamado quando chega o resultado de uma consulta (para preencher Produto/Final). */
       atualizar() {
-        if (invalidas.length) render(true);
+        if (invalidas.length) render(false);
       },
     };
   })();

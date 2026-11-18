@@ -22,7 +22,7 @@ Extensão do Google Chrome que roda na tela **Gerar Proposta de Remessa**
 
 A extensão **apenas avisa**: não bloqueia nem altera nada na tela de proposta de remessa.
 
-No canto inferior direito fica um histórico das últimas etiquetas verificadas.
+No topo da tela, à direita, fica um painel com o histórico das últimas etiquetas verificadas.
 
 ## Conferência da proposta (botão `#id_submit_button`)
 
@@ -31,14 +31,13 @@ Ao clicar no botão que gera a listagem de produtos, a extensão espera a tabela
 
 - As etiquetas que **não aparecem** na tabela (não atendem aos critérios da proposta) ficam
   **destacadas em vermelho no próprio campo de bipagem**, com o **Produto** e o **Final** ao lado.
-- O balão central mostra quantas e quais etiquetas ficaram de fora, com Produto e Final.
-- No canto inferior direito ficam **dois painéis separados**:
-  - **Conferência da proposta** (em cima): lista o que **não entrou** (vermelho) e o que **entrou**
+- No **topo da tela, à direita**, ficam **dois painéis lado a lado** (a conferência não usa o balão central):
+  - **Conferência da proposta** (à esquerda; abre sozinho a cada nova conferência): lista o que **não entrou** (vermelho) e o que **entrou**
     (verde) na proposta, com Produto e Final de cada etiqueta.
-  - **Etiquetas verificadas** (embaixo): histórico das etiquetas bipadas e a verificação de triagem;
+  - **Etiquetas verificadas** (à direita): histórico das etiquetas bipadas e a verificação de triagem;
     as que não entraram na proposta recebem o selo **NÃO APARECE NA PROPOSTA**.
   - Cada painel pode ser recolhido clicando no título.
-- Se todas aparecerem, o balão fica verde e some sozinho.
+- Se todas aparecerem, o painel de conferência fica verde.
 
 Nada é bloqueado ou alterado no campo: o destaque é uma camada desenhada por cima dele.
 
