@@ -20,7 +20,7 @@ const CONFIG = {
 
   // Opcional: ID do próprio arquivo (do link .../file/d/<ID>/...). Se vazio, a
   // extensão procura o arquivo pelo nome dentro da pasta.
-  ARQUIVO_ID: '',
+  ARQUIVO_ID: '1OBbG1ufaCTdb5lSvcuViTQ1UJUvMdobX',
 
   // Por quanto tempo o JSON baixado é reaproveitado antes de baixar de novo.
   CACHE_MINUTOS: 5,
@@ -45,14 +45,34 @@ function decodificarHtml(t) {
     .trim();
 }
 
+// Registro de cada tentativa (mostrado no pop-up em "Detalhes técnicos" quando dá erro).
+let tentativas = [];
+
+function registrar(url, info) {
+  const u = new URL(url);
+  const destino = info.final ? new URL(info.final) : null;
+  const linha = `${u.host}${u.pathname.replace(/\/d\/[\w-]+/, '/d/…')} authuser=${u.searchParams.get('authuser')} → ` +
+    (info.erro ? `falha de rede (${info.erro})`
+      : `HTTP ${info.status} ${info.tipo.split(';')[0] || 'sem tipo'}` +
+        (destino && destino.host !== u.host ? ` via ${destino.host}${destino.pathname}` : '') +
+        (info.amostra ? ` "${info.amostra}"` : ''));
+  tentativas.push(linha);
+  console.info('[Tracking Shopee]', linha);
+}
+
 async function baixarTexto(url) {
   let resp;
   try {
     resp = await fetch(url, { credentials: 'include', cache: 'no-store', redirect: 'follow' });
   } catch (e) {
-    throw new Error('Falha de rede ao acessar o Google Drive.');
+    registrar(url, { erro: e.message || String(e) });
+    return { ok: false, status: 0, tipo: '', texto: '' };
   }
-  return { ok: resp.ok, status: resp.status, tipo: resp.headers.get('content-type') || '', texto: await resp.text() };
+  const tipo = resp.headers.get('content-type') || '';
+  const texto = await resp.text();
+  const amostra = texto.replace(/\s+/g, ' ').trim().slice(0, 60);
+  registrar(url, { status: resp.status, tipo, final: resp.url, amostra });
+  return { ok: resp.ok, status: resp.status, tipo, texto };
 }
 
 // ---------------------------------------------------------------------------
@@ -88,10 +108,15 @@ async function localizarArquivo(conta) {
 // ---------------------------------------------------------------------------
 // Baixa e interpreta o JSON
 // ---------------------------------------------------------------------------
-function urlDownload(arquivo, conta) {
-  return arquivo.documento
-    ? `https://docs.google.com/document/d/${arquivo.id}/export?format=txt&authuser=${conta}`
-    : `https://drive.usercontent.google.com/download?id=${arquivo.id}&export=download&authuser=${conta}`;
+/** Endereços de download tentados, em ordem. */
+function urlsDownload(arquivo, conta) {
+  const id = encodeURIComponent(arquivo.id);
+  if (arquivo.documento) return [`https://docs.google.com/document/d/${id}/export?format=txt&authuser=${conta}`];
+  return [
+    `https://drive.usercontent.google.com/download?id=${id}&export=download&authuser=${conta}`,
+    `https://drive.google.com/uc?export=download&id=${id}&authuser=${conta}`,
+    `https://docs.google.com/uc?export=download&id=${id}&authuser=${conta}`,
+  ];
 }
 
 function interpretar(texto) {
@@ -116,19 +141,33 @@ function interpretar(texto) {
 
 /** Tenta baixar o arquivo com as contas do Chrome; devolve os dados ou null se nenhuma tem acesso. */
 async function baixarArquivo(arquivo, contas) {
+  let formatoInvalido = false;
   for (const conta of contas) {
-    const r = await baixarTexto(urlDownload(arquivo, conta));
-    if (!r.ok) continue;
-    const dados = interpretar(r.texto);
-    if (dados) return { dados, conta };
-    if (!/text\/html/i.test(r.tipo)) {
-      throw new Error(`O arquivo "${CONFIG.NOME_ARQUIVO}" não está no formato JSON esperado (falta "pedidos").`);
+    for (const url of urlsDownload(arquivo, conta)) {
+      const r = await baixarTexto(url);
+      if (!r.ok) continue;
+      const dados = interpretar(r.texto);
+      if (dados) return { dados, conta };
+      if (!/text\/html/i.test(r.tipo)) formatoInvalido = true;
     }
+  }
+  if (formatoInvalido) {
+    throw new Error(`O arquivo "${CONFIG.NOME_ARQUIVO}" foi baixado, mas não está no formato JSON esperado (precisa ter "pedidos").`);
   }
   return null;
 }
 
 async function carregarPayload() {
+  tentativas = [];
+  try {
+    return await carregarPayloadInterno();
+  } catch (e) {
+    e.detalhes = tentativas.slice(-16);
+    throw e;
+  }
+}
+
+async function carregarPayloadInterno() {
   const { descoberta } = await chrome.storage.local.get('descoberta').catch(() => ({}));
   const contaSalva = descoberta && Number.isInteger(descoberta.conta) ? descoberta.conta : null;
   const contas = contaSalva === null ? CONFIG.CONTAS_GOOGLE : [contaSalva, ...CONFIG.CONTAS_GOOGLE.filter((c) => c !== contaSalva)];
@@ -201,6 +240,6 @@ chrome.runtime.onMessage.addListener((msg, _remetente, responder) => {
         ok: true, resultados, atualizadoEm: d.atualizadoEm, geradoEm: d.geradoEm, totalLinhas: d.totalLinhas,
       });
     })
-    .catch((e) => responder({ ok: false, erro: e.message || String(e) }));
+    .catch((e) => responder({ ok: false, erro: e.message || String(e), detalhes: e.detalhes || [] }));
   return true; // resposta assíncrona
 });

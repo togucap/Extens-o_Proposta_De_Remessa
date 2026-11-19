@@ -98,7 +98,7 @@ No início do `background.js`:
 |---|---|---|
 | `PASTA_ID` | `1Zk2F78ImtNqEDF_pULHe-74qwxaMH2xe` | Pasta do Drive onde está o arquivo |
 | `NOME_ARQUIVO` | `Payload_Tracking` | Nome do arquivo na pasta |
-| `ARQUIVO_ID` | vazio | Opcional: ID do arquivo (do link `.../file/d/<ID>/...`); evita listar a pasta |
+| `ARQUIVO_ID` | `1OBbG1ufaCTdb5lSvcuViTQ1UJUvMdobX` | ID do arquivo (do link `.../file/d/<ID>/...`). Usado primeiro; se falhar, a extensão procura pelo nome na pasta |
 | `CACHE_MINUTOS` | `5` | Tempo que o arquivo baixado é reaproveitado |
 | `CONTAS_GOOGLE` | `[0, 1, 2, 3]` | Contas logadas no Chrome que são tentadas |
 
@@ -106,7 +106,9 @@ No início do `content.js`: `CAMINHO_TELA` (tela onde a extensão age) e os sele
 
 ## Problemas
 
-- Balão vermelho: passe o mouse ou abra o pop-up para ver o motivo. Normalmente é o Chrome sem
+- Balão vermelho: clique nele e abra **Detalhes técnicos** no pop-up: aparece cada endereço
+  tentado e o que o Google respondeu (ex.: página de login = conta sem acesso). O motivo também
+  aparece passando o mouse. Normalmente é o Chrome sem
   login na conta da empresa, ou a pasta/arquivo não compartilhado com essa conta.
 - Teste rápido de acesso: com a mesma conta, abra a pasta no Drive pelo link
   `https://drive.google.com/drive/folders/<PASTA_ID>`.

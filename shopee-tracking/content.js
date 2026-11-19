@@ -161,6 +161,13 @@
         .aviso { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
           padding: 6px 10px; margin-top: 10px; font-size: 12px; }
         .erro { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
+        .tecnico { margin-top: 8px; font-size: 11px; color: #4b5563; }
+        .tecnico summary { cursor: pointer; }
+        .tecnico pre {
+          margin: 6px 0 0; padding: 6px; max-height: 160px; overflow: auto; background: #f3f4f6;
+          border-radius: 6px; white-space: pre-wrap; word-break: break-all; font: 10px/1.4 Consolas, monospace;
+          user-select: text;
+        }
         .rodape {
           display: flex; align-items: center; justify-content: space-between; gap: 8px;
           padding: 8px 12px; border-top: 1px solid #e5e7eb; background: #f9fafb; font-size: 11px; color: #6b7280;
@@ -187,7 +194,10 @@
       if (!r) {
         corpo = '<div class="status">⏳ Consultando tracking…</div>';
       } else if (r.erro) {
-        corpo = `<div class="aviso erro">⚠ ${esc(r.erro)}</div>`;
+        corpo = `<div class="aviso erro">⚠ ${esc(r.erro)}</div>` +
+          (r.detalhes && r.detalhes.length
+            ? `<details class="tecnico"><summary>Detalhes técnicos</summary><pre>${esc(r.detalhes.join('\n'))}</pre></details>`
+            : '');
       } else if (!r.encontrado) {
         corpo = '<div class="aviso">Pedido não encontrado no arquivo de tracking.</div>';
       } else {
@@ -359,7 +369,7 @@
         geradoEm = resp.geradoEm || null;
         for (const [id, r] of Object.entries(resp.resultados)) resultados.set(id, r);
       } else {
-        for (const id of ids) resultados.set(id, { erro: resp.erro });
+        for (const id of ids) resultados.set(id, { erro: resp.erro, detalhes: resp.detalhes || [] });
         console.warn('[Tracking Shopee]', resp.erro);
       }
     } finally {
