@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Shopee - Status Tracking da Planilha",
+  "version": "1.0.0",
+  "description": "Na tela de Devoluções/Cancelamentos do Shopee Seller Center, mostra em cada pedido o 'Status tracking' da planilha (busca pelo ID na coluna Pedido_Parceiro).",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://docs.google.com/*",
+    "https://*.googleusercontent.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://seller.shopee.com.br/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
