@@ -1,9 +1,9 @@
 /*
- * Shopee - Status Tracking da Planilha (página)
+ * Shopee - Status Tracking (página)
  *
  * Na tela "Retornos e Pedidos cancelados" do Seller Center, lê o "ID do Pedido"
  * de cada bloco e mostra ao lado dele um balão com o "Status tracking" da
- * planilha (linha cuja coluna Pedido_Parceiro tem o mesmo ID), ou
+ * arquivo Payload_Tracking (gerado a partir da planilha e salvo no Drive), ou
  * "Não encontrado". Clicar no balão abre um pop-up com os detalhes do pedido
  * (datas, cidade, método de retorno Correios/JadLog e assistência técnica).
  */
@@ -27,7 +27,13 @@
   let versao = 0; // muda sempre que os resultados mudam (força redesenhar os balões)
   let consultando = false;
   let pendenteForcar = false;
-  let colunasFaltando = [];
+  let geradoEm = null;
+
+  /** "2026-11-19T13:43:02-03:00" -> "19/11 às 13:43" (horário como está escrito no arquivo). */
+  const dataGeracao = (iso) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(String(iso || ''));
+    return m ? `${m[3]}/${m[2]} às ${m[4]}:${m[5]}` : String(iso || '');
+  };
 
   const naTela = () => location.pathname.startsWith(CONFIG.CAMINHO_TELA);
   const horario = (ms) => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -76,20 +82,20 @@
 
     if (!r) {
       classe = 'carregando';
-      html = '<span class="texto">⏳ Consultando planilha…</span>';
-      titulo = 'Consultando a planilha';
+      html = '<span class="texto">⏳ Consultando tracking…</span>';
+      titulo = 'Consultando o arquivo de tracking';
     } else if (r.erro) {
       classe = 'erro';
-      html = '<span class="texto">⚠ Erro ao ler a planilha</span>';
+      html = '<span class="texto">⚠ Erro ao ler o tracking</span>';
       titulo = `${r.erro}\n\nClique para ver os detalhes e tentar de novo.`;
     } else if (!r.encontrado) {
       classe = 'nao';
       html = '<span class="texto">Não encontrado</span>';
-      titulo = `Pedido ${id} não encontrado na coluna Pedido_Parceiro.\n${dica}`;
+      titulo = `Pedido ${id} não encontrado no arquivo de tracking.\n${dica}`;
     } else if (!r.status) {
       classe = 'vazio';
       html = '<span class="texto">Encontrado, sem Status tracking</span>';
-      titulo = `Pedido ${id} está na planilha, mas a coluna Status tracking está vazia.\n${dica}`;
+      titulo = `Pedido ${id} está no arquivo de tracking, mas sem status.\n${dica}`;
     } else {
       classe = 'status';
       html = `<span class="rotulo">Tracking:</span><span class="texto"></span>`;
@@ -179,11 +185,11 @@
       const r = resultados.get(id);
       let corpo;
       if (!r) {
-        corpo = '<div class="status">⏳ Consultando planilha…</div>';
+        corpo = '<div class="status">⏳ Consultando tracking…</div>';
       } else if (r.erro) {
         corpo = `<div class="aviso erro">⚠ ${esc(r.erro)}</div>`;
       } else if (!r.encontrado) {
-        corpo = '<div class="aviso">Pedido não encontrado na coluna <b>Pedido_Parceiro</b> da planilha.</div>';
+        corpo = '<div class="aviso">Pedido não encontrado no arquivo de tracking.</div>';
       } else {
         const metodo = metodoRetorno(r.autorizacao);
         const assist = temAssistencia(r.assistencia);
@@ -198,11 +204,12 @@
               <span class="sub">Autorização: ${r.autorizacao ? esc(r.autorizacao) : '—'}</span></dd>
             <dt>Assistência</dt>
             <dd><span class="selo ${assist ? 'sim' : 'nao'}">Assistência: ${assist ? 'Sim' : 'Não'}</span>
-              ${assist ? `<span class="sub">${esc(r.assistencia)}</span>` : ''}</dd>
+              ${assist && !/^sim$/i.test(r.assistencia) ? `<span class="sub">${esc(r.assistencia)}</span>` : ''}</dd>
           </dl>
-          ${colunasFaltando.length ? `<div class="aviso">Colunas não encontradas na planilha: ${colunasFaltando.map(esc).join(', ')}</div>` : ''}`;
+`;
       }
-      const lida = atualizadoEm ? `Planilha lida às ${horario(atualizadoEm)}` : '';
+      const lida = geradoEm ? `Dados gerados em ${esc(dataGeracao(geradoEm))}`
+        : atualizadoEm ? `Dados lidos às ${horario(atualizadoEm)}` : '';
       return `
         <div class="topo">
           <div class="pedido"><small>ID do Pedido</small>${esc(id)}</div>
@@ -211,7 +218,7 @@
         <div class="corpo">${corpo}</div>
         <div class="rodape">
           <span>${lida}</span>
-          <button class="atualizar" ${consultando ? 'disabled' : ''}>${consultando ? 'Atualizando…' : '↻ Atualizar planilha'}</button>
+          <button class="atualizar" ${consultando ? 'disabled' : ''}>${consultando ? 'Atualizando…' : '↻ Atualizar dados'}</button>
         </div>`;
     }
 
@@ -308,7 +315,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Consulta à planilha (feita pelo service worker)
+  // Consulta ao arquivo de tracking (feita pelo service worker)
   // ---------------------------------------------------------------------------
   function pedirAoServiceWorker(ids, forcar) {
     return new Promise((resolve) => {
@@ -346,10 +353,10 @@
     try {
       const resp = await pedirAoServiceWorker(ids, forcar);
       if (resp.ok) {
-        // Se a planilha foi baixada de novo, os resultados antigos ficam desatualizados.
+        // Se o arquivo foi baixado de novo, os resultados antigos ficam desatualizados.
         if (atualizadoEm && resp.atualizadoEm !== atualizadoEm) resultados.clear();
         atualizadoEm = resp.atualizadoEm;
-        colunasFaltando = resp.colunasFaltando || [];
+        geradoEm = resp.geradoEm || null;
         for (const [id, r] of Object.entries(resp.resultados)) resultados.set(id, r);
       } else {
         for (const id of ids) resultados.set(id, { erro: resp.erro });
