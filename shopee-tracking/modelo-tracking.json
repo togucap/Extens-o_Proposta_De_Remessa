@@ -1,0 +1,31 @@
+{
+  "versao": 1,
+  "geradoEm": "2026-11-19T14:00:00-03:00",
+  "totalPedidos": 3,
+  "pedidos": {
+    "261103BKH9YCYG": {
+      "status": "Entregue",
+      "dataOcorrencia": "10/11/2026",
+      "cidade": "SÃO PAULO - SP",
+      "dataPrevista": "12/11/2026",
+      "autorizacao": "13987654321",
+      "assistencia": "Não"
+    },
+    "261024EJNF43RG": {
+      "status": "Em trânsito",
+      "dataOcorrencia": "11/11/2026",
+      "cidade": "RIO DE JANEIRO - RJ",
+      "dataPrevista": "20/11/2026",
+      "autorizacao": "99887766",
+      "assistencia": "Sim"
+    },
+    "2611039TQXX3SJ": {
+      "status": "",
+      "dataOcorrencia": "",
+      "cidade": "",
+      "dataPrevista": "",
+      "autorizacao": "",
+      "assistencia": "Não"
+    }
+  }
+}
