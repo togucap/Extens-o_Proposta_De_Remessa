@@ -17,8 +17,29 @@ Extensão do Google Chrome para a tela **Retornos e Pedidos cancelados** do Shop
 | **⚠ Erro ao ler a planilha** (vermelho) | Sem acesso à planilha (passe o mouse para ver o motivo) |
 
 - Funciona ao trocar de aba (Todos, Em devolução, Canceladas…) e de página, sem recarregar.
-- **Clicar em um balão** baixa a planilha de novo (sem abrir o pedido). Passe o mouse para ver a hora da última leitura.
-- A planilha é relida automaticamente a cada 5 minutos, no máximo.
+- **Clicar em um balão** abre um pop-up com os detalhes do pedido (sem abrir o pedido na Shopee).
+
+## Pop-up de detalhes
+
+| Campo | Origem |
+|---|---|
+| Status tracking | coluna `Status tracking` |
+| Data Ocorrência | coluna `Data Ocorrencia` |
+| Cidade última interação | coluna `cidade ultima interação` |
+| Data Prevista Entrega | coluna `Data Prevista Entrega` |
+| Método de retorno | **JadLog** quando `Autorização Postagem` começa com `13`; nos demais casos **Correios** |
+| Assistência | **Sim** quando `Assistencia_Tecnica` tem conteúdo (o conteúdo aparece abaixo); **Não** quando está vazia ou com `-`, `#N/A`, `0`, `Não` |
+
+- Fecha no **×**, com **Esc** ou clicando fora.
+- O botão **↻ Atualizar planilha** baixa a planilha de novo na hora.
+
+## Quando a planilha é baixada
+
+- A planilha é baixada **uma vez** e reaproveitada por **5 minutos** (`CACHE_MINUTOS`).
+  Recarregar a tela, trocar de aba ou de página dentro desse tempo **não** baixa de novo.
+- Depois de 5 minutos, a próxima vez que a tela precisar dos dados ela baixa de novo.
+- O botão **↻ Atualizar planilha** (no pop-up) baixa na hora, sem esperar os 5 minutos.
+- A cópia fica só na memória do Chrome e é apagada quando o navegador é fechado.
 
 ## Como a planilha é lida
 
@@ -50,6 +71,7 @@ No início do `background.js`:
 | `ABA_GID` | `1831425043` | Aba da planilha (`gid=` no link) |
 | `COLUNA_PEDIDO` | `Pedido_Parceiro` | Coluna onde o ID do pedido é procurado |
 | `COLUNA_STATUS` | `Status tracking` | Coluna exibida no balão |
+| `COLUNAS_DETALHE` | Data Ocorrencia, cidade ultima interação, Data Prevista Entrega, Autorização Postagem, Assistencia_Tecnica | Colunas lidas para o pop-up |
 | `CACHE_MINUTOS` | `5` | Tempo que a planilha baixada é reaproveitada |
 
 No início do `content.js`: `CAMINHO_TELA` (tela onde a extensão age) e os seletores dos blocos.
