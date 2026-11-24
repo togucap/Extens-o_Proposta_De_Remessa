@@ -9,3 +9,12 @@ Cada pasta é uma extensão independente, carregada no Chrome por **Carregar sem
 | [`shopee-tracking/`](shopee-tracking/) | Status tracking (arquivo Payload_Tracking no Drive) em cada pedido | `seller.shopee.com.br` – Retornos e Pedidos cancelados |
 
 > Ao carregar, selecione a **pasta da extensão** (a que contém o `manifest.json`), não a raiz do repositório.
+
+## Apps Script (Google)
+
+Projetos de Apps Script **separados** (não mexem nos scripts que já existem na planilha), para colar
+em https://script.google.com.
+
+| Pasta | O que faz |
+|---|---|
+| [`apps-script/retorno-extensao/`](apps-script/retorno-extensao/) | App da Web que recebe os dados enviados pela extensão e grava o JSON `Retorno_Extensao` na pasta do Drive |
