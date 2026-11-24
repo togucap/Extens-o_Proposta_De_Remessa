@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Shopee - Status Tracking",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Na tela de Devoluções/Cancelamentos do Shopee Seller Center, mostra em cada pedido o status de tracking lido do arquivo Payload_Tracking no Google Drive.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "alarms"],
   "host_permissions": [
     "https://drive.google.com/*",
     "https://drive.usercontent.google.com/*",
     "https://docs.google.com/*",
+    "https://script.google.com/*",
     "https://*.googleusercontent.com/*"
   ],
   "background": {

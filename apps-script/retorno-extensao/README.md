@@ -32,7 +32,8 @@ Extensão (Shopee) ──POST JSON──► App da Web (executa como o dono) ─
 }
 ```
 
-Por enquanto só o número do pedido. Campos novos podem ser incluídos depois em cada pedido
+A extensão `shopee-tracking` envia `{ "pedido": "...", "situacao": "Não encontrado" }` (ou
+`"Encontrado"` quando um pedido informado passa a existir na base). Campos novos podem ser incluídos depois em cada pedido
 (ex.: `"motivo": "Mudei de ideia"`) **sem mudar o script**: ele aceita até 30 campos simples
 (texto, número, sim/não) por pedido.
 

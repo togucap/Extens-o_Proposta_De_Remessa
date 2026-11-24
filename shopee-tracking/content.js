@@ -161,6 +161,9 @@
         .aviso { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
           padding: 6px 10px; margin-top: 10px; font-size: 12px; }
         .erro { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
+        .retorno { margin-top: 8px; font-size: 12px; color: #374151; }
+        .retorno:empty { display: none; }
+        .retorno .falha { display: block; margin-top: 4px; color: #991b1b; }
         .tecnico { margin-top: 8px; font-size: 11px; color: #4b5563; }
         .tecnico summary { cursor: pointer; }
         .tecnico pre {
@@ -199,7 +202,8 @@
             ? `<details class="tecnico"><summary>Detalhes técnicos</summary><pre>${esc(r.detalhes.join('\n'))}</pre></details>`
             : '');
       } else if (!r.encontrado) {
-        corpo = '<div class="aviso">Pedido não encontrado no arquivo de tracking.</div>';
+        corpo = '<div class="aviso">Pedido não encontrado no arquivo de tracking.</div>' +
+          `<div class="retorno">${textoRetorno(r.retorno)}</div>`;
       } else {
         const metodo = metodoRetorno(r.autorizacao);
         const assist = temAssistencia(r.assistencia);
@@ -232,6 +236,31 @@
         </div>`;
     }
 
+    function textoRetorno(ret) {
+      if (!ret) return '';
+      if (ret.estado === 'enviado') {
+        const quando = new Date(ret.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        return `📤 Informado à base em ${esc(quando)}`;
+      }
+      return `📤 Na fila para informar à base (envio a cada ${ret.intervalo} min)` +
+        (ret.erro ? `<span class="falha">⚠ Último envio falhou: ${esc(ret.erro)}</span>` : '');
+    }
+
+    /** Atualiza a linha de envio com a situação atual (pode ter sido enviado depois da consulta). */
+    function atualizarRetorno(id) {
+      try {
+        chrome.runtime.sendMessage({ tipo: 'statusRetorno', id }, (resp) => {
+          if (chrome.runtime.lastError || !resp || !resp.ok || !ancora || ancora.dataset.pedido !== id) return;
+          const el = caixa.querySelector('.retorno');
+          const r = resultados.get(id);
+          if (el && r) {
+            r.retorno = resp.retorno;
+            el.innerHTML = textoRetorno(resp.retorno);
+          }
+        });
+      } catch (e) { /* extensão recarregada */ }
+    }
+
     function posicionar() {
       if (!ancora || !ancora.isConnected) return fechar();
       const r = ancora.getBoundingClientRect();
@@ -248,6 +277,8 @@
       if (!ancora) return;
       const id = ancora.dataset.pedido;
       caixa.innerHTML = conteudo(id);
+      const r = resultados.get(id);
+      if (r && r.encontrado === false) atualizarRetorno(id);
       caixa.querySelector('.fechar').addEventListener('click', fechar);
       caixa.querySelector('.atualizar').addEventListener('click', () => {
         atualizar(true);

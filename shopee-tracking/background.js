@@ -10,6 +10,12 @@
  *   { "versao": 1, "geradoEm": "2026-11-19T13:43:02-03:00", "totalPedidos": 4573,
  *     "pedidos": { "<ID do pedido>": { "status", "dataOcorrencia", "cidade",
  *                  "dataPrevista", "autorizacao", "assistencia": "Sim" | "Não" } } }
+ *
+ * Retorno para a base: os pedidos que aparecem como "Não encontrado" entram numa
+ * fila e são enviados periodicamente (RETORNO_INTERVALO_MINUTOS) ao App da Web
+ * intermediário (apps-script/retorno-extensao), que grava o JSON Retorno_Extensao
+ * no Drive. Cada pedido é enviado uma vez (reenvio só se a situação mudar ou após
+ * RETORNO_REENVIO_DIAS).
  */
 'use strict';
 
@@ -27,6 +33,16 @@ const CONFIG = {
 
   // Contas do Google logadas no Chrome que serão tentadas (0 = primeira conta).
   CONTAS_GOOGLE: [0, 1, 2, 3],
+
+  // App da Web que recebe os pedidos "Não encontrado" (apps-script/retorno-extensao).
+  RETORNO_URL: 'https://script.google.com/a/macros/kabum.com.br/s/AKfycbxWBUjOxhiS1LO36L6xF3C9HZu7mQ4nhCn9BhZsCApJDnQWRdPykIMoxSfrL9cwZynY/exec',
+  RETORNO_ORIGEM: 'shopee-retornos',
+  // De quanto em quanto tempo a fila é enviada.
+  RETORNO_INTERVALO_MINUTOS: 10,
+  // Um pedido já enviado só é enviado de novo se a situação mudar ou depois deste prazo.
+  RETORNO_REENVIO_DIAS: 7,
+  // Máximo de pedidos por requisição (o App da Web aceita até 500).
+  RETORNO_LOTE: 400,
 };
 
 const CAMPOS = ['status', 'dataOcorrencia', 'cidade', 'dataPrevista', 'autorizacao', 'assistencia'];
@@ -225,16 +241,177 @@ async function obterDados(forcar) {
   return baixando;
 }
 
+
+// ---------------------------------------------------------------------------
+// Retorno para a base: fila de pedidos "Não encontrado" enviada periodicamente
+// ---------------------------------------------------------------------------
+const SITUACAO_NAO = 'Não encontrado';
+const SITUACAO_SIM = 'Encontrado';
+const DIA = 86400000;
+
+// Serializa leituras/gravações do estado (várias abas podem consultar ao mesmo tempo).
+let travaRetorno = Promise.resolve();
+function comTravaRetorno(fn) {
+  const r = travaRetorno.then(fn, fn);
+  travaRetorno = r.catch(() => {});
+  return r;
+}
+
+async function lerRetorno() {
+  const { retorno } = await chrome.storage.local.get('retorno').catch(() => ({}));
+  return retorno || { pendentes: {}, enviados: {}, ultimoEnvio: null, ultimoErro: null };
+}
+const salvarRetorno = (estado) => chrome.storage.local.set({ retorno: estado }).catch(() => {});
+
+/** Coloca na fila os "Não encontrado" e corrige os que passaram a existir na base. */
+function registrarParaRetorno(resultados) {
+  return comTravaRetorno(async () => {
+    const estado = await lerRetorno();
+    const agora = Date.now();
+    let mudou = false;
+    for (const [id, r] of Object.entries(resultados)) {
+      const chave = normalizarId(id);
+      if (!chave) continue;
+      const enviado = estado.enviados[chave];
+      const pendente = estado.pendentes[chave];
+      if (!r.encontrado) {
+        const precisa = !enviado || enviado.situacao !== SITUACAO_NAO || agora - enviado.em > CONFIG.RETORNO_REENVIO_DIAS * DIA;
+        if (precisa && (!pendente || pendente.situacao !== SITUACAO_NAO)) {
+          estado.pendentes[chave] = { situacao: SITUACAO_NAO, vistoEm: agora };
+          mudou = true;
+        }
+      } else if (enviado && enviado.situacao === SITUACAO_NAO) {
+        // Foi informado como "Não encontrado" e agora está na base: atualiza o registro.
+        if (!pendente || pendente.situacao !== SITUACAO_SIM) {
+          estado.pendentes[chave] = { situacao: SITUACAO_SIM, vistoEm: agora };
+          mudou = true;
+        }
+      } else if (pendente && pendente.situacao === SITUACAO_NAO) {
+        delete estado.pendentes[chave]; // entrou na base antes de ser enviado
+        mudou = true;
+      }
+    }
+    if (mudou) await salvarRetorno(estado);
+    return estado;
+  });
+}
+
+/** Situação de envio de um pedido (mostrada no pop-up). */
+function situacaoRetorno(estado, id) {
+  const chave = normalizarId(id);
+  const p = estado.pendentes[chave];
+  const e = estado.enviados[chave];
+  const base = { intervalo: CONFIG.RETORNO_INTERVALO_MINUTOS, erro: estado.ultimoErro ? estado.ultimoErro.mensagem : null };
+  if (p) return { ...base, estado: 'pendente' };
+  if (e) return { ...base, estado: 'enviado', em: e.em, erro: null };
+  return null;
+}
+
+async function postarRetorno(pedidos) {
+  const { descoberta } = await chrome.storage.local.get('descoberta').catch(() => ({}));
+  const salva = descoberta && Number.isInteger(descoberta.conta) ? descoberta.conta : null;
+  const contas = salva === null ? CONFIG.CONTAS_GOOGLE : [salva, ...CONFIG.CONTAS_GOOGLE.filter((c) => c !== salva)];
+  const corpo = JSON.stringify({ versao: 1, origem: CONFIG.RETORNO_ORIGEM, pedidos });
+  let ultimo = 'sem resposta';
+
+  for (const conta of contas) {
+    const url = `${CONFIG.RETORNO_URL}${CONFIG.RETORNO_URL.includes('?') ? '&' : '?'}authuser=${conta}`;
+    let resp;
+    try {
+      resp = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: corpo,
+      });
+    } catch (e) {
+      throw new Error('Falha de rede ao enviar para a base.');
+    }
+    const texto = await resp.text();
+    let json = null;
+    try { json = JSON.parse(texto); } catch (e) { /* página HTML (login/sem permissão) */ }
+    if (json && json.ok) return json;
+    if (json && json.erro) throw new Error(`App da Web: ${json.erro}`); // chegou ao app, mas ele recusou
+    ultimo = `HTTP ${resp.status} ${texto.replace(/\s+/g, ' ').slice(0, 60)}`;
+    console.info('[Tracking Shopee] envio com authuser', conta, '→', ultimo);
+  }
+  throw new Error(`Sem acesso ao App da Web (entre no Chrome com a conta da empresa). Última resposta: ${ultimo}`);
+}
+
+/** Envia a fila ao App da Web (em lotes). Pedidos que falharem continuam na fila. */
+function enviarPendentes() {
+  return comTravaRetorno(async () => {
+    const estado = await lerRetorno();
+    const ids = Object.keys(estado.pendentes);
+    if (!ids.length) return { enviados: 0 };
+
+    let total = 0;
+    try {
+      for (let i = 0; i < ids.length; i += CONFIG.RETORNO_LOTE) {
+        const lote = ids.slice(i, i + CONFIG.RETORNO_LOTE);
+        await postarRetorno(lote.map((id) => ({ pedido: id, situacao: estado.pendentes[id].situacao })));
+        const agora = Date.now();
+        for (const id of lote) {
+          estado.enviados[id] = { situacao: estado.pendentes[id].situacao, em: agora };
+          delete estado.pendentes[id];
+        }
+        total += lote.length;
+        estado.ultimoEnvio = agora;
+        estado.ultimoErro = null;
+        await salvarRetorno(estado);
+      }
+    } catch (e) {
+      estado.ultimoErro = { mensagem: e.message || String(e), em: Date.now() };
+      console.warn('[Tracking Shopee] Falha ao enviar retorno:', estado.ultimoErro.mensagem);
+    }
+
+    // Esquece envios antigos (serão reenviados se o pedido aparecer de novo como não encontrado).
+    const limite = Date.now() - Math.max(30, CONFIG.RETORNO_REENVIO_DIAS * 2) * DIA;
+    for (const [id, e] of Object.entries(estado.enviados)) if (e.em < limite) delete estado.enviados[id];
+    await salvarRetorno(estado);
+    if (total) console.info(`[Tracking Shopee] ${total} pedido(s) enviados para a base.`);
+    return { enviados: total };
+  });
+}
+
+// Envio periódico.
+const ALARME_RETORNO = 'enviarRetorno';
+function garantirAlarme() {
+  chrome.alarms.get(ALARME_RETORNO, (a) => {
+    if (!a || a.periodInMinutes !== CONFIG.RETORNO_INTERVALO_MINUTOS) {
+      chrome.alarms.create(ALARME_RETORNO, { periodInMinutes: CONFIG.RETORNO_INTERVALO_MINUTOS });
+    }
+  });
+}
+chrome.runtime.onInstalled.addListener(garantirAlarme);
+chrome.runtime.onStartup.addListener(garantirAlarme);
+garantirAlarme();
+chrome.alarms.onAlarm.addListener((a) => { if (a.name === ALARME_RETORNO) enviarPendentes(); });
+
 chrome.runtime.onMessage.addListener((msg, _remetente, responder) => {
+  if (msg && msg.tipo === 'statusRetorno') {
+    lerRetorno().then((estado) => responder({ ok: true, retorno: situacaoRetorno(estado, msg.id) }));
+    return true;
+  }
   if (!msg || msg.tipo !== 'consultarPedidos') return false;
+  if (msg.forcar) enviarPendentes(); // "Atualizar dados" também envia a fila na hora
   obterDados(!!msg.forcar)
-    .then((d) => {
+    .then(async (d) => {
       const resultados = {};
       for (const id of msg.ids || []) {
         const chave = normalizarId(id);
         resultados[id] = Object.prototype.hasOwnProperty.call(d.mapa, chave)
           ? { encontrado: true, ...d.mapa[chave] }
           : { encontrado: false };
+      }
+      try {
+        const estado = await registrarParaRetorno(resultados);
+        for (const [id, r] of Object.entries(resultados)) {
+          if (!r.encontrado) r.retorno = situacaoRetorno(estado, id);
+        }
+      } catch (e) {
+        console.warn('[Tracking Shopee] Falha ao registrar retorno:', e);
       }
       responder({
         ok: true, resultados, atualizadoEm: d.atualizadoEm, geradoEm: d.geradoEm, totalLinhas: d.totalLinhas,
