@@ -40,7 +40,11 @@ pedido informado passa a existir na base):
   "prazo": "Vence em 6 horas", "venceAprox": "2026-11-25T21:30:00-03:00" }
 ```
 
-Campos vazios (`""`) também são gravados, para limpar um valor antigo (ex.: o prazo sumiu). Campos novos podem ser incluídos depois em cada pedido
+Campos vazios (`""`) também são gravados, para limpar um valor antigo (ex.: o prazo sumiu).
+
+Pedidos enviados com `"situacao": "Encontrado"` (passaram a existir na base) são **removidos** do
+arquivo, que guarda só os "Não encontrado". Registros "Encontrado" que já estejam no arquivo também
+são removidos no próximo envio. A resposta informa a quantidade em `"removidos"`. Campos novos podem ser incluídos depois em cada pedido
 (ex.: `"motivo": "Mudei de ideia"`) **sem mudar o script**: ele aceita até 30 campos simples
 (texto, número, sim/não) por pedido.
 

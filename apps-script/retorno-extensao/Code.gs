@@ -16,6 +16,9 @@
  *     "pedidos": [ { "pedido": "261103BKH9YCYG" }, ... ]   // outros campos podem vir depois
  *   }
  *
+ * Pedidos enviados com "situacao": "Encontrado" (passaram a existir na base) são REMOVIDOS
+ * do arquivo, que guarda só os "Não encontrado".
+ *
  * Arquivo gerado (um registro por pedido, atualizado a cada envio):
  *   {
  *     "versao": 1,
@@ -143,7 +146,25 @@ function gravarPedidos_(envio) {
     var novos = 0;
     var atualizados = 0;
 
+    var removidos = 0;
+
+    // O arquivo guarda só pedidos "Não encontrado": registros "Encontrado" antigos são removidos.
+    Object.keys(atual.pedidos).forEach(function (id) {
+      if (ehEncontrado_(atual.pedidos[id] && atual.pedidos[id].situacao)) {
+        delete atual.pedidos[id];
+        removidos++;
+      }
+    });
+
     envio.pedidos.forEach(function (p) {
+      // Pedido que passou a existir na base: sai do arquivo.
+      if (ehEncontrado_(p.campos.situacao)) {
+        if (atual.pedidos[p.id]) {
+          delete atual.pedidos[p.id];
+          removidos++;
+        }
+        return;
+      }
       var registro = atual.pedidos[p.id];
       if (!registro) {
         registro = { pedido: p.id, primeiroEnvio: agora };
@@ -170,6 +191,7 @@ function gravarPedidos_(envio) {
       recebidos: envio.pedidos.length,
       novos: novos,
       atualizados: atualizados,
+      removidos: removidos,
       ignorados: envio.invalidos.length,
       totalPedidos: atual.totalPedidos,
       arquivoId: arquivo.getId(),
@@ -214,6 +236,11 @@ function lerArquivo_(arquivo) {
 // ---------------------------------------------------------------------------
 function responder_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** "Encontrado" (pedido que existe na base). */
+function ehEncontrado_(situacao) {
+  return texto_(situacao).toLowerCase() === 'encontrado';
 }
 
 function normalizarId_(v) {

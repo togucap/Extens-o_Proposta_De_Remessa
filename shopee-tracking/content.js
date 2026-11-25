@@ -368,16 +368,19 @@
   // Última informação enviada ao service worker por pedido (evita mensagens repetidas).
   const infoRegistrada = new Map();
 
-  /** Envia ao service worker situação + Status da solicitação + prazo dos pedidos já consultados. */
-  function registrarInfos() {
+  /**
+   * Envia ao service worker situação + Status da solicitação + prazo dos pedidos já consultados.
+   * forcar = true (verificação completa): envia todos os da página, mesmo os já enviados antes.
+   */
+  function registrarInfos(forcar = false) {
     const itens = [];
     for (const b of blocosDaTela()) {
       const r = resultados.get(b.id);
       if (!r || r.erro) continue;
       const impressao = `${r.encontrado}|${b.statusSolicitacao}|${b.prazo}`;
-      if (infoRegistrada.get(b.id) === impressao) continue;
+      if (!forcar && infoRegistrada.get(b.id) === impressao) continue;
       infoRegistrada.set(b.id, impressao);
-      itens.push({ id: b.id, encontrado: !!r.encontrado, statusSolicitacao: b.statusSolicitacao, prazo: b.prazo });
+      itens.push({ id: b.id, encontrado: !!r.encontrado, statusSolicitacao: b.statusSolicitacao, prazo: b.prazo, forcar });
     }
     if (!itens.length) return Promise.resolve();
     return new Promise((resolve) => {
@@ -657,7 +660,7 @@
             throw new Error('Não foi possível ler o arquivo de tracking (veja o balão vermelho).');
           }
           contar(blocos);
-          await registrarInfos();
+          await registrarInfos(true);
           paginas++;
 
           // Paginação pode sumir por um instante; espera até 3 s antes de concluir que não há mais páginas.

@@ -324,13 +324,15 @@ function registrarParaRetorno(itens) {
       const { unidade, venceAprox } = lerPrazo(prazo, agora);
       const impressao = [situacao, statusSolicitacao, unidade].join('|');
       const precisa = !enviado || enviado.impressao !== impressao ||
+        // Verificação completa (botão "Verificar todas as páginas"): envia todos os não encontrados.
+        (situacao === SITUACAO_NAO && it.forcar) ||
         (situacao === SITUACAO_NAO && agora - enviado.em > CONFIG.RETORNO_REENVIO_DIAS * DIA);
 
       if (!precisa) {
         if (pendente) { delete estado.pendentes[chave]; mudou = true; }
         continue;
       }
-      if (!pendente || pendente.impressao !== impressao || pendente.prazo !== prazo) {
+      if (!pendente || pendente.impressao !== impressao || pendente.prazo !== prazo || it.forcar) {
         estado.pendentes[chave] = {
           situacao, statusSolicitacao, prazo,
           // Mantém a estimativa anterior se só o número mudou (evita oscilar a cada leitura).

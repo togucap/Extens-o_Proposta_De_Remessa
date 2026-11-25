@@ -84,6 +84,8 @@ estiver aberta** (ex.: Todos):
    (1, 2, 3 … 34), clicando em "próxima página". **Não troca de aba.**
 2. Cada pedido é consultado no `Payload_Tracking`; os **Não encontrado** entram na fila.
 3. No fim, volta para a página 1 e **envia a fila para a base na hora**.
+   A verificação completa envia **todos** os "Não encontrado" que encontrar, mesmo os já enviados
+   antes — use-a para refazer a base (ex.: depois de apagar o `Retorno_Extensao_Shopee`).
 
 - A barra mostra o progresso (página X de Y, pedidos lidos, não encontrados) e o resultado da
   última verificação completa.
@@ -103,8 +105,9 @@ Os pedidos que aparecem como **Não encontrado** são informados à base automat
 3. **Cada pedido é enviado uma vez.** Ele só é reenviado se a situação mudar ou depois de
    7 dias (`RETORNO_REENVIO_DIAS`), evitando atualizações repetidas quando vários usuários veem
    os mesmos pedidos.
-4. Se um pedido informado como "Não encontrado" depois **aparecer na base**, a extensão envia a
-   atualização `"situacao": "Encontrado"`.
+4. Se um pedido informado como "Não encontrado" depois **aparecer na base**, a extensão envia
+   `"situacao": "Encontrado"` e o App da Web **remove** o pedido do arquivo (o arquivo guarda só
+   os "Não encontrado").
 5. Se o envio falhar, os pedidos **continuam na fila** e são tentados no próximo ciclo.
 
 Cada pedido enviado:
