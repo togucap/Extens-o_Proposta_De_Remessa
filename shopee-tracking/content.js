@@ -20,16 +20,13 @@
     SELETOR_ID_PEDIDO: '.order-id .id-content',
     SELETOR_CABECALHO_BLOCO: '.return-row-item-head',
 
-    // Varredura de abas e páginas (botão "Verificar todas as abas e páginas").
-    SELETOR_ABA: '.eds-tabs__nav-tab',
+    // Varredura das páginas da aba atual (botão "Verificar todas as páginas").
     SELETOR_PROXIMA_PAGINA: '.eds-pager__button-next',
     SELETOR_PAGINA_ATIVA: '.eds-pager__page.active',
     SELETOR_PAGINAS: '.eds-pager__page',
-    // Abas percorridas (pelo início do nome). Vazio = todas as abas da tela.
-    ABAS_VARREDURA: [],
     PAUSA_ENTRE_PAGINAS_MS: 800, // intervalo entre cliques, para não sobrecarregar a Shopee
-    ESPERA_CARREGAR_MS: 15000, // tempo máximo esperando uma página/aba carregar
-    MAX_PAGINAS_POR_ABA: 300,
+    ESPERA_CARREGAR_MS: 15000, // tempo máximo esperando uma página carregar
+    MAX_PAGINAS: 500, // limite de segurança
   };
 
   const CLASSE_BALAO = 'kbm-tracking-balao';
@@ -434,10 +431,9 @@
 
 
   // ---------------------------------------------------------------------------
-  // Varredura: percorre todas as abas e páginas da lista
+  // Varredura: percorre todas as páginas (1, 2, 3, …) da aba atual
   // ---------------------------------------------------------------------------
   const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
-  const normalizarTexto = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
   const escHtml = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const assinaturaLista = () => blocosDaTela().map((b) => b.id).join(',');
   const paginaAtiva = () => {
@@ -447,7 +443,7 @@
   const totalPaginas = () => Math.max(1, ...[...document.querySelectorAll(CONFIG.SELETOR_PAGINAS)]
     .map((li) => parseInt(li.textContent, 10)).filter((n) => !isNaN(n)));
 
-  /** Espera a lista mudar (outra aba/página) e terminar de carregar. */
+  /** Espera a lista mudar (outra página) e terminar de carregar. */
   async function esperarLista(assinaturaAntes, paginaAntes) {
     const inicio = Date.now();
     let ultima = null;
@@ -505,7 +501,7 @@
           .erro { color: #b91c1c; }
         </style>
         <div class="barra">
-          <button class="acao">🔎 Verificar todas as abas e páginas</button>
+          <button class="acao">🔎 Verificar todas as páginas</button>
           <span class="status"></span>
         </div>`;
       raiz.querySelector('.acao').addEventListener('click', () => (rodando ? (parar = true) : iniciar()));
@@ -532,7 +528,7 @@
     function botao(textoRodando) {
       if (!barra) return;
       const b = barra.shadowRoot.querySelector('.acao');
-      b.textContent = textoRodando ? '⏹ Parar verificação' : '🔎 Verificar todas as abas e páginas';
+      b.textContent = textoRodando ? '⏹ Parar verificação' : '🔎 Verificar todas as páginas';
       b.classList.toggle('parar', textoRodando);
     }
 
@@ -543,26 +539,6 @@
         const quando = new Date(u.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
         status(`Última verificação completa: <b>${quando}</b> — ${u.pedidos} pedidos, <b>${u.naoEncontrados}</b> não encontrados${u.interrompida ? ' (interrompida)' : ''}.`);
       } catch (e) { /* sem histórico */ }
-    }
-
-    /** Abas a percorrer: [{ indice, nome }] (pela posição, pois o nome pode ter contador que muda). */
-    function abasParaVarrer() {
-      const abas = [...document.querySelectorAll(CONFIG.SELETOR_ABA)]
-        .map((a, indice) => ({ indice, nome: a.textContent.trim() }))
-        .filter((a) => a.nome);
-      if (!CONFIG.ABAS_VARREDURA.length) return abas;
-      return abas.filter((a) => CONFIG.ABAS_VARREDURA.some((alvo) => normalizarTexto(a.nome).startsWith(normalizarTexto(alvo))));
-    }
-
-    async function abrirAba(indice) {
-      const aba = document.querySelectorAll(CONFIG.SELETOR_ABA)[indice];
-      if (!aba) return false;
-      if (aba.classList.contains('active')) return true;
-      const antes = assinaturaLista();
-      const pagAntes = paginaAtiva();
-      aba.click();
-      await esperarLista(antes, pagAntes); // aba vazia: não muda a lista "com pedidos", segue mesmo assim
-      return true;
     }
 
     async function irParaPrimeiraPagina() {
@@ -589,7 +565,6 @@
       const naoEncontrados = new Set();
       let paginas = 0;
       let interrompida = false;
-      const abaOriginal = [...document.querySelectorAll(CONFIG.SELETOR_ABA)].findIndex((a) => a.classList.contains('active'));
 
       const contar = (blocos) => {
         for (const b of blocos) {
@@ -600,42 +575,30 @@
       };
 
       try {
-        const abas = abasParaVarrer();
-        if (!abas.length) abas.push(null); // tela sem abas: só a paginação
-        for (const aba of abas) {
-          if (parar) break;
-          const nome = aba && aba.nome;
-          if (aba) {
-            status(`Abrindo a aba <b>${escHtml(nome)}</b>…`);
-            await abrirAba(aba.indice);
+        status('Indo para a página 1…');
+        await irParaPrimeiraPagina();
+        for (let n = 0; n < CONFIG.MAX_PAGINAS && !parar; n++) {
+          status(`Verificando página <b>${escHtml(paginaAtiva() || '1')}</b> de ${totalPaginas()} · ` +
+            `${vistos.size} pedidos lidos, <b>${naoEncontrados.size}</b> não encontrados`);
+          const blocos = await esperarConsulta();
+          if (blocos.some((b) => (resultados.get(b.id) || {}).erro)) {
+            throw new Error('Não foi possível ler o arquivo de tracking (veja o balão vermelho).');
           }
-          await irParaPrimeiraPagina();
-          for (let n = 0; n < CONFIG.MAX_PAGINAS_POR_ABA && !parar; n++) {
-            const total = totalPaginas();
-            status(`Verificando ${nome ? `<b>${escHtml(nome)}</b> — ` : ''}página <b>${paginaAtiva() || 1}</b> de ${total} · ` +
-              `${vistos.size} pedidos lidos, <b>${naoEncontrados.size}</b> não encontrados`);
-            const blocos = await esperarConsulta();
-            if (blocos.some((b) => (resultados.get(b.id) || {}).erro)) {
-              throw new Error('Não foi possível ler o arquivo de tracking (veja o balão vermelho).');
-            }
-            contar(blocos);
-            paginas++;
-            const prox = proximaDisponivel();
-            if (!prox) break;
-            await dormir(CONFIG.PAUSA_ENTRE_PAGINAS_MS);
-            const antes = assinaturaLista();
-            const pagAntes = paginaAtiva();
-            prox.click();
-            if (!(await esperarLista(antes, pagAntes))) {
-              throw new Error(`A página seguinte não carregou${nome ? ` na aba ${nome}` : ''}.`);
-            }
+          contar(blocos);
+          paginas++;
+          const prox = proximaDisponivel();
+          if (!prox) break; // última página
+          await dormir(CONFIG.PAUSA_ENTRE_PAGINAS_MS);
+          const antes = assinaturaLista();
+          const pagAntes = paginaAtiva();
+          prox.click();
+          if (!(await esperarLista(antes, pagAntes))) {
+            throw new Error(`A página ${Number(pagAntes) + 1 || 'seguinte'} não carregou.`);
           }
         }
         interrompida = parar;
-        if (abaOriginal >= 0) {
-          status('Voltando para a aba inicial…');
-          await abrirAba(abaOriginal);
-        }
+        status('Voltando para a página 1…');
+        await irParaPrimeiraPagina();
 
         status(`Enviando ${naoEncontrados.size} não encontrados para a base…`);
         const envio = await new Promise((resolve) => {
@@ -650,8 +613,7 @@
         status(`${interrompida ? 'Verificação interrompida' : '✔ Verificação concluída'}: <b>${vistos.size}</b> pedidos em ${paginas} páginas, ` +
           `<b>${naoEncontrados.size}</b> não encontrados${envio && !envio.erro ? ' — informados à base' : ''}.${falhaEnvio}`);
       } catch (e) {
-        if (abaOriginal >= 0) await abrirAba(abaOriginal).catch(() => {});
-        status(`⚠ ${escHtml(e.message || e)} Lidos até aqui: ${vistos.size} pedidos (os não encontrados já estão na fila).`, { erro: true });
+        status(`⚠ ${escHtml(e.message || e)} Lidos até aqui: ${vistos.size} pedidos em ${paginas} páginas (os não encontrados já estão na fila).`, { erro: true });
       } finally {
         rodando = false;
         botao(false);

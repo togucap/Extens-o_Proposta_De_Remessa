@@ -75,21 +75,22 @@ maiúsculas/minúsculas e sem espaços nas pontas.
 - Recomendado: o script que gera o JSON **atualiza o mesmo arquivo** (em vez de apagar e criar outro)
   e não deixa dois arquivos `Payload_Tracking` na pasta.
 
-## Verificar todas as abas e páginas
+## Verificar todas as páginas
 
-Logo abaixo das abas aparece a barra **🔎 Verificar todas as abas e páginas**. Ao clicar:
+Logo abaixo das abas aparece a barra **🔎 Verificar todas as páginas**. Ao clicar, na **aba que
+estiver aberta** (ex.: Todos):
 
-1. A extensão abre cada aba (Todos, Em análise pela Shopee, Em devolução, Aprovadas, Em disputa,
-   Canceladas) e percorre **todas as páginas** de cada uma, clicando em "próxima página".
-2. Cada pedido é consultado no `Payload_Tracking`; os **Não encontrado** entram na fila (sem repetir
-   pedidos que aparecem em mais de uma aba).
-3. No fim, volta para a aba em que você estava e **envia a fila para a base na hora**.
+1. A extensão vai para a **página 1** e percorre **todas as páginas** da paginação
+   (1, 2, 3 … 34), clicando em "próxima página". **Não troca de aba.**
+2. Cada pedido é consultado no `Payload_Tracking`; os **Não encontrado** entram na fila.
+3. No fim, volta para a página 1 e **envia a fila para a base na hora**.
 
-- A barra mostra o progresso (aba, página, pedidos lidos, não encontrados) e o resultado da
+- A barra mostra o progresso (página X de Y, pedidos lidos, não encontrados) e o resultado da
   última verificação completa.
 - O botão vira **⏹ Parar verificação** durante a varredura; o que já foi lido continua na fila.
-- Há uma pausa de 0,8 s entre páginas (`PAUSA_ENTRE_PAGINAS_MS`) para não sobrecarregar a Shopee.
-- Não mexa na tela da Shopee enquanto a verificação roda (ela clica nas abas e páginas).
+- Há uma pausa de 0,8 s entre páginas (`PAUSA_ENTRE_PAGINAS_MS`) para não sobrecarregar a Shopee
+  (34 páginas levam cerca de 1 a 2 minutos).
+- Não mexa na tela da Shopee enquanto a verificação roda (ela clica na paginação).
 
 ## Retorno para a base (pedidos "Não encontrado")
 
@@ -148,10 +149,9 @@ paginação, e a varredura:
 
 | Opção | Padrão | Descrição |
 |---|---|---|
-| `ABAS_VARREDURA` | `[]` (todas) | Abas percorridas, pelo início do nome. Ex.: `['Todos']` para só a aba Todos |
 | `PAUSA_ENTRE_PAGINAS_MS` | `800` | Pausa entre uma página e outra |
-| `ESPERA_CARREGAR_MS` | `15000` | Tempo máximo esperando uma página/aba carregar |
-| `MAX_PAGINAS_POR_ABA` | `300` | Limite de segurança de páginas por aba |
+| `ESPERA_CARREGAR_MS` | `15000` | Tempo máximo esperando uma página carregar |
+| `MAX_PAGINAS` | `500` | Limite de segurança de páginas |
 
 ## Problemas
 
