@@ -107,7 +107,26 @@ Os pedidos que aparecem como **Não encontrado** são informados à base automat
    atualização `"situacao": "Encontrado"`.
 5. Se o envio falhar, os pedidos **continuam na fila** e são tentados no próximo ciclo.
 
-Cada pedido enviado: `{ "pedido": "2610300TGNX7GR", "situacao": "Não encontrado" }`.
+Cada pedido enviado:
+
+```json
+{
+  "pedido": "2610300TGNX7GR",
+  "situacao": "Não encontrado",
+  "statusSolicitacao": "Em análise pela Shopee",
+  "prazo": "Vence em 6 horas",
+  "venceAprox": "2026-11-25T21:30:00-03:00"
+}
+```
+
+| Campo | Origem na tela da Shopee |
+|---|---|
+| `statusSolicitacao` | Coluna **Status da solicitação** (só a 1ª linha, sem o texto de ajuda). Sempre enviado |
+| `prazo` | Coluna **Ações**, apenas o texto **"Vence em …"** (ex.: "Vence em 6 horas", "Vence em 1 dias"). Vazio quando não há |
+| `venceAprox` | Data/hora aproximada do vencimento, calculada no momento da leitura (`prazo` é relativo e fica desatualizado). Vazio quando não há prazo |
+
+Um pedido só é reenviado quando muda a situação, o Status da solicitação, quando o prazo
+aparece/some ou muda de unidade (dias → horas). "Vence em 6 horas" → "5 horas" **não** gera reenvio.
 No pop-up de um pedido "Não encontrado" aparece **"📤 Na fila para informar à base"** ou
 **"📤 Informado à base em dd/mm, hh:mm"** (e o erro do último envio, se houver).
 

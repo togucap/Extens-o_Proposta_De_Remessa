@@ -11,7 +11,8 @@
  *     "pedidos": { "<ID do pedido>": { "status", "dataOcorrencia", "cidade",
  *                  "dataPrevista", "autorizacao", "assistencia": "Sim" | "Não" } } }
  *
- * Retorno para a base: os pedidos que aparecem como "Não encontrado" entram numa
+ * Retorno para a base: os pedidos que aparecem como "Não encontrado" (com o Status da
+ * solicitação e o prazo "Vence em …" lidos da tela) entram numa
  * fila e são enviados periodicamente (RETORNO_INTERVALO_MINUTOS) ao App da Web
  * intermediário (apps-script/retorno-extensao), que grava o JSON Retorno_Extensao_Shopee
  * no Drive. Cada pedido é enviado uma vez (reenvio só se a situação mudar ou após
@@ -257,37 +258,85 @@ function comTravaRetorno(fn) {
   return r;
 }
 
+// Versão do conteúdo enviado. Ao mudar (ex.: novos campos), a memória de "já enviados" é
+// zerada e todos os pedidos são enviados de novo com os campos novos.
+const FORMATO_RETORNO = 2;
+
 async function lerRetorno() {
   const { retorno } = await chrome.storage.local.get('retorno').catch(() => ({}));
-  return retorno || { pendentes: {}, enviados: {}, ultimoEnvio: null, ultimoErro: null };
+  if (retorno && retorno.formato === FORMATO_RETORNO) return retorno;
+  return { formato: FORMATO_RETORNO, pendentes: {}, enviados: {}, ultimoEnvio: null, ultimoErro: null };
 }
 const salvarRetorno = (estado) => chrome.storage.local.set({ retorno: estado }).catch(() => {});
 
-/** Coloca na fila os "Não encontrado" e corrige os que passaram a existir na base. */
-function registrarParaRetorno(resultados) {
+const doisDigitos = (n) => String(n).padStart(2, '0');
+
+/** Data/hora local no formato 2026-11-25T21:30:00-03:00. */
+function isoLocal(ms) {
+  const d = new Date(ms);
+  const off = -d.getTimezoneOffset();
+  const sinal = off >= 0 ? '+' : '-';
+  return `${d.getFullYear()}-${doisDigitos(d.getMonth() + 1)}-${doisDigitos(d.getDate())}T` +
+    `${doisDigitos(d.getHours())}:${doisDigitos(d.getMinutes())}:00` +
+    `${sinal}${doisDigitos(Math.floor(Math.abs(off) / 60))}:${doisDigitos(Math.abs(off) % 60)}`;
+}
+
+/** "Vence em 6 horas" -> { unidade: 'horas', venceAprox: agora + 6 h }. */
+function lerPrazo(prazo, agora) {
+  const m = /vence em\s+(\d+)\s*(minuto|minutos|min|hora|horas|h|dia|dias|d)\b/i.exec(String(prazo || ''));
+  if (!m) return { unidade: prazo ? 'outro' : '', venceAprox: '' };
+  const n = Number(m[1]);
+  const u = m[2].toLowerCase();
+  const ms = u.startsWith('d') ? n * DIA : u.startsWith('h') ? n * 3600000 : n * 60000;
+  return { unidade: u.startsWith('d') ? 'dias' : u.startsWith('h') ? 'horas' : 'minutos', venceAprox: isoLocal(agora + ms) };
+}
+
+/**
+ * Coloca na fila os "Não encontrado" (com Status da solicitação e prazo "Vence em …") e
+ * corrige os que passaram a existir na base.
+ * itens: [{ id, encontrado, statusSolicitacao, prazo }]
+ *
+ * Um pedido só volta para a fila se mudar a situação, o Status da solicitação, se o prazo
+ * aparecer/sumir ou mudar de unidade (dias -> horas), ou após RETORNO_REENVIO_DIAS.
+ * Assim "Vence em 6 horas" -> "5 horas" não gera um novo envio (a planilha usa venceAprox).
+ */
+function registrarParaRetorno(itens) {
   return comTravaRetorno(async () => {
     const estado = await lerRetorno();
     const agora = Date.now();
     let mudou = false;
-    for (const [id, r] of Object.entries(resultados)) {
-      const chave = normalizarId(id);
+    for (const it of itens) {
+      const chave = normalizarId(it.id);
       if (!chave) continue;
       const enviado = estado.enviados[chave];
       const pendente = estado.pendentes[chave];
-      if (!r.encontrado) {
-        const precisa = !enviado || enviado.situacao !== SITUACAO_NAO || agora - enviado.em > CONFIG.RETORNO_REENVIO_DIAS * DIA;
-        if (precisa && (!pendente || pendente.situacao !== SITUACAO_NAO)) {
-          estado.pendentes[chave] = { situacao: SITUACAO_NAO, vistoEm: agora };
-          mudou = true;
-        }
-      } else if (enviado && enviado.situacao === SITUACAO_NAO) {
-        // Foi informado como "Não encontrado" e agora está na base: atualiza o registro.
-        if (!pendente || pendente.situacao !== SITUACAO_SIM) {
-          estado.pendentes[chave] = { situacao: SITUACAO_SIM, vistoEm: agora };
-          mudou = true;
-        }
-      } else if (pendente && pendente.situacao === SITUACAO_NAO) {
-        delete estado.pendentes[chave]; // entrou na base antes de ser enviado
+
+      let situacao;
+      if (!it.encontrado) situacao = SITUACAO_NAO;
+      else if ((enviado && enviado.situacao === SITUACAO_NAO) || (pendente && pendente.situacao === SITUACAO_SIM)) situacao = SITUACAO_SIM;
+      else {
+        if (pendente) { delete estado.pendentes[chave]; mudou = true; } // entrou na base antes de ser enviado
+        continue;
+      }
+
+      const statusSolicitacao = String(it.statusSolicitacao || '').trim();
+      const prazo = String(it.prazo || '').trim();
+      const { unidade, venceAprox } = lerPrazo(prazo, agora);
+      const impressao = [situacao, statusSolicitacao, unidade].join('|');
+      const precisa = !enviado || enviado.impressao !== impressao ||
+        (situacao === SITUACAO_NAO && agora - enviado.em > CONFIG.RETORNO_REENVIO_DIAS * DIA);
+
+      if (!precisa) {
+        if (pendente) { delete estado.pendentes[chave]; mudou = true; }
+        continue;
+      }
+      if (!pendente || pendente.impressao !== impressao || pendente.prazo !== prazo) {
+        estado.pendentes[chave] = {
+          situacao, statusSolicitacao, prazo,
+          // Mantém a estimativa anterior se só o número mudou (evita oscilar a cada leitura).
+          venceAprox: pendente && pendente.impressao === impressao && pendente.venceAprox ? pendente.venceAprox : venceAprox,
+          impressao, vistoEm: agora,
+        };
         mudou = true;
       }
     }
@@ -350,10 +399,19 @@ function enviarPendentes() {
     try {
       for (let i = 0; i < ids.length; i += CONFIG.RETORNO_LOTE) {
         const lote = ids.slice(i, i + CONFIG.RETORNO_LOTE);
-        await postarRetorno(lote.map((id) => ({ pedido: id, situacao: estado.pendentes[id].situacao })));
+        await postarRetorno(lote.map((id) => {
+          const p = estado.pendentes[id];
+          return {
+            pedido: id,
+            situacao: p.situacao,
+            statusSolicitacao: p.statusSolicitacao || '',
+            prazo: p.prazo || '',
+            venceAprox: p.venceAprox || '',
+          };
+        }));
         const agora = Date.now();
         for (const id of lote) {
-          estado.enviados[id] = { situacao: estado.pendentes[id].situacao, em: agora };
+          estado.enviados[id] = { situacao: estado.pendentes[id].situacao, impressao: estado.pendentes[id].impressao, em: agora };
           delete estado.pendentes[id];
         }
         total += lote.length;
@@ -399,6 +457,12 @@ chrome.runtime.onMessage.addListener((msg, _remetente, responder) => {
       .catch((e) => responder({ ok: false, erro: e.message || String(e) }));
     return true;
   }
+  if (msg && msg.tipo === 'registrarRetorno') {
+    registrarParaRetorno(Array.isArray(msg.itens) ? msg.itens : [])
+      .then(() => responder({ ok: true }))
+      .catch((e) => responder({ ok: false, erro: e.message || String(e) }));
+    return true;
+  }
   if (msg && msg.tipo === 'statusRetorno') {
     lerRetorno().then((estado) => responder({ ok: true, retorno: situacaoRetorno(estado, msg.id) }));
     return true;
@@ -415,13 +479,11 @@ chrome.runtime.onMessage.addListener((msg, _remetente, responder) => {
           : { encontrado: false };
       }
       try {
-        const estado = await registrarParaRetorno(resultados);
+        const estado = await lerRetorno();
         for (const [id, r] of Object.entries(resultados)) {
           if (!r.encontrado) r.retorno = situacaoRetorno(estado, id);
         }
-      } catch (e) {
-        console.warn('[Tracking Shopee] Falha ao registrar retorno:', e);
-      }
+      } catch (e) { /* situação de envio é opcional */ }
       responder({
         ok: true, resultados, atualizadoEm: d.atualizadoEm, geradoEm: d.geradoEm, totalLinhas: d.totalLinhas,
       });

@@ -19,6 +19,9 @@
     SELETOR_BLOCO: '.return-row-item',
     SELETOR_ID_PEDIDO: '.order-id .id-content',
     SELETOR_CABECALHO_BLOCO: '.return-row-item-head',
+    // Campos enviados à base junto com cada pedido "Não encontrado".
+    SELETOR_STATUS_SOLICITACAO: '.item-request-status',
+    SELETOR_PRAZO: '.item-action .due-date-wrapper',
 
     // Varredura das páginas da aba atual (botão "Verificar todas as páginas").
     SELETOR_PROXIMA_PAGINA: '.eds-pager__button-next',
@@ -327,14 +330,61 @@
   // ---------------------------------------------------------------------------
   // Leitura dos blocos e aplicação dos balões
   // ---------------------------------------------------------------------------
+  const limpo = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+
+  /** "Status da solicitação": só a 1ª linha (sem o texto de ajuda que vem embaixo). */
+  function statusSolicitacao(bloco) {
+    const el = bloco.querySelector(CONFIG.SELETOR_STATUS_SOLICITACAO);
+    if (!el) return '';
+    const principal = el.querySelector(':scope > div > div:not(.request-solution-hint-text)');
+    if (principal) return limpo(principal.textContent);
+    const copia = el.cloneNode(true);
+    copia.querySelectorAll('.request-solution-hint-text').forEach((h) => h.remove());
+    return limpo(copia.textContent);
+  }
+
+  /** Coluna "Ações": só o texto "Vence em …" (ex.: "Vence em 6 horas"); vazio se não houver. */
+  function prazoVencimento(bloco) {
+    for (const el of bloco.querySelectorAll(CONFIG.SELETOR_PRAZO)) {
+      const t = limpo(el.textContent);
+      if (/vence em/i.test(t)) return t;
+    }
+    // Reserva: qualquer texto "Vence em …" na coluna de ações.
+    const acoes = bloco.querySelector('.item-action');
+    const m = acoes && /vence em\s+[^\n]*?\b(minutos?|horas?|dias?)\b/i.exec(limpo(acoes.textContent));
+    return m ? limpo(m[0]) : '';
+  }
+
   function blocosDaTela() {
     const itens = [];
     for (const bloco of document.querySelectorAll(CONFIG.SELETOR_BLOCO)) {
       const elId = bloco.querySelector(CONFIG.SELETOR_ID_PEDIDO);
       const id = elId && elId.textContent.trim();
-      if (id) itens.push({ bloco, elId, id });
+      if (id) itens.push({ bloco, elId, id, statusSolicitacao: statusSolicitacao(bloco), prazo: prazoVencimento(bloco) });
     }
     return itens;
+  }
+
+  // Última informação enviada ao service worker por pedido (evita mensagens repetidas).
+  const infoRegistrada = new Map();
+
+  /** Envia ao service worker situação + Status da solicitação + prazo dos pedidos já consultados. */
+  function registrarInfos() {
+    const itens = [];
+    for (const b of blocosDaTela()) {
+      const r = resultados.get(b.id);
+      if (!r || r.erro) continue;
+      const impressao = `${r.encontrado}|${b.statusSolicitacao}|${b.prazo}`;
+      if (infoRegistrada.get(b.id) === impressao) continue;
+      infoRegistrada.set(b.id, impressao);
+      itens.push({ id: b.id, encontrado: !!r.encontrado, statusSolicitacao: b.statusSolicitacao, prazo: b.prazo });
+    }
+    if (!itens.length) return Promise.resolve();
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ tipo: 'registrarRetorno', itens }, () => { void chrome.runtime.lastError; resolve(); });
+      } catch (e) { resolve(); }
+    });
   }
 
   function aplicarBaloes() {
@@ -418,6 +468,7 @@
       versao++;
     }
     aplicarBaloes();
+    registrarInfos();
     popup.redesenhar();
 
     // Pedidos que surgiram durante a consulta, ou clique em "atualizar" no meio dela.
@@ -606,6 +657,7 @@
             throw new Error('Não foi possível ler o arquivo de tracking (veja o balão vermelho).');
           }
           contar(blocos);
+          await registrarInfos();
           paginas++;
 
           // Paginação pode sumir por um instante; espera até 3 s antes de concluir que não há mais páginas.
@@ -661,6 +713,7 @@
     estavaNaTela = true;
     varredura.garantirBarra();
     atualizar(false);
+    registrarInfos(); // Status/prazo podem mudar na tela sem novos pedidos
   }
 
   new MutationObserver(() => {
