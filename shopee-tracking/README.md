@@ -89,7 +89,7 @@ estiver aberta** (ex.: Todos):
   última verificação completa.
 - O botão vira **⏹ Parar verificação** durante a varredura; o que já foi lido continua na fila.
 - Há uma pausa de 0,8 s entre páginas (`PAUSA_ENTRE_PAGINAS_MS`) para não sobrecarregar a Shopee
-  (34 páginas levam cerca de 1 a 2 minutos).
+  (34 páginas levam cerca de 2 a 3 minutos, conforme a velocidade da Shopee).
 - Não mexa na tela da Shopee enquanto a verificação roda (ela clica na paginação).
 
 ## Retorno para a base (pedidos "Não encontrado")

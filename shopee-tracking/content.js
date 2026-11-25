@@ -443,30 +443,58 @@
   const totalPaginas = () => Math.max(1, ...[...document.querySelectorAll(CONFIG.SELETOR_PAGINAS)]
     .map((li) => parseInt(li.textContent, 10)).filter((n) => !isNaN(n)));
 
-  /** Espera a lista mudar (outra página) e terminar de carregar. */
-  async function esperarLista(assinaturaAntes, paginaAntes) {
+  const paginaNum = () => parseInt(paginaAtiva(), 10) || 1;
+  const temPaginacao = () => !!document.querySelector(CONFIG.SELETOR_PAGINA_ATIVA);
+
+  /**
+   * Espera a página `alvo` carregar: número ativo = alvo, lista com pedidos, diferente da
+   * lista anterior e estável por ~800 ms (a Shopee esvazia a lista enquanto carrega).
+   */
+  async function esperarPagina(alvo, assinaturaAntes) {
     const inicio = Date.now();
     let ultima = null;
     let estavelDesde = 0;
     while (Date.now() - inicio < CONFIG.ESPERA_CARREGAR_MS) {
       await dormir(250);
       const atual = assinaturaLista();
-      const mudou = atual !== assinaturaAntes || paginaAtiva() !== paginaAntes;
-      if (!mudou) continue;
-      // Considera carregada quando fica igual por ~600 ms.
+      const pronta = atual && atual !== assinaturaAntes && (!temPaginacao() || paginaNum() === alvo);
+      if (!pronta) { ultima = null; continue; }
       if (atual !== ultima) { ultima = atual; estavelDesde = Date.now(); continue; }
-      if (Date.now() - estavelDesde >= 600) return true;
+      if (Date.now() - estavelDesde >= 800) return true;
     }
     return false;
   }
 
-  /** Espera a extensão consultar todos os pedidos visíveis (isso coloca os "Não encontrado" na fila). */
+  /** Vai para a página `alvo` (botão "próxima" ou o número), tentando até 3 vezes. */
+  async function irParaPagina(alvo) {
+    const antes = assinaturaLista();
+    for (let tentativa = 1; tentativa <= 3; tentativa++) {
+      // Se um clique anterior já levou à página (só demorou), apenas espera carregar.
+      if (paginaNum() !== alvo) {
+        const prox = alvo === paginaNum() + 1 ? proximaDisponivel() : null;
+        const numero = [...document.querySelectorAll(CONFIG.SELETOR_PAGINAS)]
+          .find((li) => li.textContent.trim() === String(alvo) && !li.classList.contains('active'));
+        const alvoClique = prox || numero;
+        if (!alvoClique) { await dormir(1000); continue; } // paginação ainda carregando
+        alvoClique.click();
+      }
+      if (await esperarPagina(alvo, antes)) return true;
+    }
+    return false;
+  }
+
+  function proximaDisponivel() {
+    const b = document.querySelector(CONFIG.SELETOR_PROXIMA_PAGINA);
+    return b && !b.disabled && !b.classList.contains('eds-button--disabled') ? b : null;
+  }
+
+  /** Espera a página ter pedidos e a extensão consultar todos (isso coloca os "Não encontrado" na fila). */
   async function esperarConsulta() {
     const inicio = Date.now();
     while (Date.now() - inicio < CONFIG.ESPERA_CARREGAR_MS) {
       atualizar(false);
       const blocos = blocosDaTela();
-      if (blocos.every((b) => resultados.has(b.id))) return blocos;
+      if (blocos.length && blocos.every((b) => resultados.has(b.id))) return blocos;
       await dormir(300);
     }
     return blocosDaTela();
@@ -542,18 +570,8 @@
     }
 
     async function irParaPrimeiraPagina() {
-      if (paginaAtiva() === '1' || !document.querySelector(CONFIG.SELETOR_PAGINA_ATIVA)) return;
-      const um = [...document.querySelectorAll(CONFIG.SELETOR_PAGINAS)].find((li) => li.textContent.trim() === '1');
-      if (!um) return;
-      const antes = assinaturaLista();
-      const pagAntes = paginaAtiva();
-      um.click();
-      await esperarLista(antes, pagAntes);
-    }
-
-    function proximaDisponivel() {
-      const b = document.querySelector(CONFIG.SELETOR_PROXIMA_PAGINA);
-      return b && !b.disabled && !b.classList.contains('eds-button--disabled') ? b : null;
+      if (!temPaginacao() || paginaNum() === 1) return true;
+      return irParaPagina(1);
     }
 
     async function iniciar() {
@@ -576,24 +594,29 @@
 
       try {
         status('Indo para a página 1…');
-        await irParaPrimeiraPagina();
+        if (!(await irParaPrimeiraPagina())) throw new Error('Não consegui voltar para a página 1.');
+        let totalVisto = 1;
         for (let n = 0; n < CONFIG.MAX_PAGINAS && !parar; n++) {
-          status(`Verificando página <b>${escHtml(paginaAtiva() || '1')}</b> de ${totalPaginas()} · ` +
-            `${vistos.size} pedidos lidos, <b>${naoEncontrados.size}</b> não encontrados`);
           const blocos = await esperarConsulta();
+          const atual = paginaNum();
+          totalVisto = Math.max(totalVisto, totalPaginas());
+          status(`Verificando página <b>${atual}</b> de ${totalVisto} · ` +
+            `${vistos.size} pedidos lidos, <b>${naoEncontrados.size}</b> não encontrados`);
           if (blocos.some((b) => (resultados.get(b.id) || {}).erro)) {
             throw new Error('Não foi possível ler o arquivo de tracking (veja o balão vermelho).');
           }
           contar(blocos);
           paginas++;
-          const prox = proximaDisponivel();
-          if (!prox) break; // última página
+
+          // Paginação pode sumir por um instante; espera até 3 s antes de concluir que não há mais páginas.
+          for (let i = 0; i < 12 && !temPaginacao(); i++) await dormir(250);
+          totalVisto = Math.max(totalVisto, totalPaginas());
+          if (!temPaginacao() || atual >= totalVisto) break; // última página
+          if (parar) break;
+
           await dormir(CONFIG.PAUSA_ENTRE_PAGINAS_MS);
-          const antes = assinaturaLista();
-          const pagAntes = paginaAtiva();
-          prox.click();
-          if (!(await esperarLista(antes, pagAntes))) {
-            throw new Error(`A página ${Number(pagAntes) + 1 || 'seguinte'} não carregou.`);
+          if (!(await irParaPagina(atual + 1))) {
+            throw new Error(`A página ${atual + 1} de ${totalVisto} não carregou.`);
           }
         }
         interrompida = parar;
