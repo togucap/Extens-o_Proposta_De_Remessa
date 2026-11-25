@@ -73,36 +73,6 @@ Mesma estrutura do `Payload_Tracking` (pedidos indexados pelo ID).
 
 Em caso de erro: `{ "ok": false, "erro": "mensagem" }`.
 
-## Aba "Retorno_Extensão" na planilha base
-
-O arquivo [`AbaRetorno.gs`](AbaRetorno.gs) abastece a aba **`Retorno_Extensão`** da planilha base
-com os pedidos do JSON:
-
-| pedido | situacao | prazo | origem |
-|---|---|---|---|
-| 261025GYNGW6WE | Não encontrado | Vence em 1 dias | shopee-retornos |
-
-- **Automático:** a cada envio da extensão, depois de gravar o JSON, o app reescreve a aba com os
-  mesmos dados (`CONFIG_ABA.ATUALIZAR_NO_ENVIO`). A aba fica sempre igual ao JSON.
-- **Manual:** no editor, rode **`sincronizarAbaRetorno`** — lê o JSON do Drive e reescreve a aba
-  (use depois de editar/limpar o JSON à mão).
-- Escreve só as colunas **A:D** (cabeçalho na linha 1). Outras colunas da aba não são tocadas.
-- A coluna `pedido` é gravada como **texto** (evita IDs virarem número).
-- A planilha base é aberta pelo ID (`CONFIG_ABA.PLANILHA_ID`); os scripts que já existem nela
-  **não são alterados**.
-- Se a aba não existir, o envio da extensão continua funcionando (o JSON é gravado) e a resposta
-  traz `"aba": { "atualizada": false, "erro": "…" }`.
-
-### Como ativar (projeto já publicado)
-
-1. No projeto do App da Web (script.google.com), clique em **+ → Script** e crie o arquivo
-   **`AbaRetorno`**. Cole o conteúdo de [`AbaRetorno.gs`](AbaRetorno.gs) e salve.
-2. Abra `appsscript.json` e substitua pelo [`appsscript.json`](appsscript.json) desta pasta
-   (inclui a permissão de planilhas).
-3. Selecione a função **`sincronizarAbaRetorno`** → **Executar**. O Google pede a nova autorização
-   (planilhas) → **Permitir**. A aba é preenchida com o que já está no JSON.
-4. **Implantar → Gerenciar implantações → ✏️ → Versão: Nova versão → Implantar** (a URL não muda).
-
 ## Passo a passo para publicar
 
 1. Acesse **https://script.google.com** com a conta dona da pasta → **Novo projeto**.

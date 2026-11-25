@@ -17,4 +17,4 @@ em https://script.google.com.
 
 | Pasta | O que faz |
 |---|---|
-| [`apps-script/retorno-extensao/`](apps-script/retorno-extensao/) | App da Web que recebe os dados enviados pela extensão, grava o JSON `Retorno_Extensao_Shopee` na pasta do Drive e abastece a aba `Retorno_Extensão` da planilha base |
+| [`apps-script/retorno-extensao/`](apps-script/retorno-extensao/) | App da Web que recebe os dados enviados pela extensão e grava o JSON `Retorno_Extensao_Shopee` na pasta do Drive |
