@@ -390,6 +390,15 @@ garantirAlarme();
 chrome.alarms.onAlarm.addListener((a) => { if (a.name === ALARME_RETORNO) enviarPendentes(); });
 
 chrome.runtime.onMessage.addListener((msg, _remetente, responder) => {
+  if (msg && msg.tipo === 'enviarRetornoAgora') {
+    enviarPendentes()
+      .then(async (r) => {
+        const estado = await lerRetorno();
+        responder({ ok: true, ...r, erro: estado.ultimoErro && Object.keys(estado.pendentes).length ? estado.ultimoErro.mensagem : null });
+      })
+      .catch((e) => responder({ ok: false, erro: e.message || String(e) }));
+    return true;
+  }
   if (msg && msg.tipo === 'statusRetorno') {
     lerRetorno().then((estado) => responder({ ok: true, retorno: situacaoRetorno(estado, msg.id) }));
     return true;

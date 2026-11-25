@@ -75,6 +75,22 @@ maiúsculas/minúsculas e sem espaços nas pontas.
 - Recomendado: o script que gera o JSON **atualiza o mesmo arquivo** (em vez de apagar e criar outro)
   e não deixa dois arquivos `Payload_Tracking` na pasta.
 
+## Verificar todas as abas e páginas
+
+Logo abaixo das abas aparece a barra **🔎 Verificar todas as abas e páginas**. Ao clicar:
+
+1. A extensão abre cada aba (Todos, Em análise pela Shopee, Em devolução, Aprovadas, Em disputa,
+   Canceladas) e percorre **todas as páginas** de cada uma, clicando em "próxima página".
+2. Cada pedido é consultado no `Payload_Tracking`; os **Não encontrado** entram na fila (sem repetir
+   pedidos que aparecem em mais de uma aba).
+3. No fim, volta para a aba em que você estava e **envia a fila para a base na hora**.
+
+- A barra mostra o progresso (aba, página, pedidos lidos, não encontrados) e o resultado da
+  última verificação completa.
+- O botão vira **⏹ Parar verificação** durante a varredura; o que já foi lido continua na fila.
+- Há uma pausa de 0,8 s entre páginas (`PAUSA_ENTRE_PAGINAS_MS`) para não sobrecarregar a Shopee.
+- Não mexa na tela da Shopee enquanto a verificação roda (ela clica nas abas e páginas).
+
 ## Retorno para a base (pedidos "Não encontrado")
 
 Os pedidos que aparecem como **Não encontrado** são informados à base automaticamente:
@@ -127,7 +143,15 @@ No início do `background.js`:
 | `RETORNO_REENVIO_DIAS` | `7` | Prazo para reenviar um pedido já informado |
 | `RETORNO_LOTE` | `400` | Pedidos por requisição |
 
-No início do `content.js`: `CAMINHO_TELA` (tela onde a extensão age) e os seletores dos blocos.
+No início do `content.js`: `CAMINHO_TELA` (tela onde a extensão age), os seletores dos blocos e da
+paginação, e a varredura:
+
+| Opção | Padrão | Descrição |
+|---|---|---|
+| `ABAS_VARREDURA` | `[]` (todas) | Abas percorridas, pelo início do nome. Ex.: `['Todos']` para só a aba Todos |
+| `PAUSA_ENTRE_PAGINAS_MS` | `800` | Pausa entre uma página e outra |
+| `ESPERA_CARREGAR_MS` | `15000` | Tempo máximo esperando uma página/aba carregar |
+| `MAX_PAGINAS_POR_ABA` | `300` | Limite de segurança de páginas por aba |
 
 ## Problemas
 

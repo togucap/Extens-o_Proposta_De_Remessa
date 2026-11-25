@@ -19,6 +19,17 @@
     SELETOR_BLOCO: '.return-row-item',
     SELETOR_ID_PEDIDO: '.order-id .id-content',
     SELETOR_CABECALHO_BLOCO: '.return-row-item-head',
+
+    // Varredura de abas e páginas (botão "Verificar todas as abas e páginas").
+    SELETOR_ABA: '.eds-tabs__nav-tab',
+    SELETOR_PROXIMA_PAGINA: '.eds-pager__button-next',
+    SELETOR_PAGINA_ATIVA: '.eds-pager__page.active',
+    SELETOR_PAGINAS: '.eds-pager__page',
+    // Abas percorridas (pelo início do nome). Vazio = todas as abas da tela.
+    ABAS_VARREDURA: [],
+    PAUSA_ENTRE_PAGINAS_MS: 800, // intervalo entre cliques, para não sobrecarregar a Shopee
+    ESPERA_CARREGAR_MS: 15000, // tempo máximo esperando uma página/aba carregar
+    MAX_PAGINAS_POR_ABA: 300,
   };
 
   const CLASSE_BALAO = 'kbm-tracking-balao';
@@ -352,6 +363,8 @@
 
   function removerBaloes() {
     popup.fechar();
+    const barra = document.getElementById('kbm-tracking-varredura');
+    if (barra) barra.remove();
     document.querySelectorAll(`.${CLASSE_BALAO}`).forEach((el) => el.remove());
   }
 
@@ -419,6 +432,235 @@
     }
   }
 
+
+  // ---------------------------------------------------------------------------
+  // Varredura: percorre todas as abas e páginas da lista
+  // ---------------------------------------------------------------------------
+  const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+  const normalizarTexto = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const escHtml = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const assinaturaLista = () => blocosDaTela().map((b) => b.id).join(',');
+  const paginaAtiva = () => {
+    const el = document.querySelector(CONFIG.SELETOR_PAGINA_ATIVA);
+    return el ? el.textContent.trim() : '';
+  };
+  const totalPaginas = () => Math.max(1, ...[...document.querySelectorAll(CONFIG.SELETOR_PAGINAS)]
+    .map((li) => parseInt(li.textContent, 10)).filter((n) => !isNaN(n)));
+
+  /** Espera a lista mudar (outra aba/página) e terminar de carregar. */
+  async function esperarLista(assinaturaAntes, paginaAntes) {
+    const inicio = Date.now();
+    let ultima = null;
+    let estavelDesde = 0;
+    while (Date.now() - inicio < CONFIG.ESPERA_CARREGAR_MS) {
+      await dormir(250);
+      const atual = assinaturaLista();
+      const mudou = atual !== assinaturaAntes || paginaAtiva() !== paginaAntes;
+      if (!mudou) continue;
+      // Considera carregada quando fica igual por ~600 ms.
+      if (atual !== ultima) { ultima = atual; estavelDesde = Date.now(); continue; }
+      if (Date.now() - estavelDesde >= 600) return true;
+    }
+    return false;
+  }
+
+  /** Espera a extensão consultar todos os pedidos visíveis (isso coloca os "Não encontrado" na fila). */
+  async function esperarConsulta() {
+    const inicio = Date.now();
+    while (Date.now() - inicio < CONFIG.ESPERA_CARREGAR_MS) {
+      atualizar(false);
+      const blocos = blocosDaTela();
+      if (blocos.every((b) => resultados.has(b.id))) return blocos;
+      await dormir(300);
+    }
+    return blocosDaTela();
+  }
+
+  const varredura = (() => {
+    let rodando = false;
+    let parar = false;
+    let barra = null;
+
+    function criarBarra() {
+      const host = document.createElement('div');
+      host.id = 'kbm-tracking-varredura';
+      host.style.cssText = 'all: initial; display: block; margin: 8px 0;';
+      const raiz = host.attachShadow({ mode: 'open' });
+      raiz.innerHTML = `
+        <style>
+          :host { all: initial; display: block; }
+          .barra {
+            display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+            font: 13px/1.4 Roboto, "Helvetica Neue", Arial, sans-serif; color: #374151;
+            background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px;
+          }
+          button {
+            font: 600 13px Roboto, Arial, sans-serif; border-radius: 6px; padding: 6px 12px; cursor: pointer;
+            border: 1px solid #ee4d2d; background: #ee4d2d; color: #fff;
+          }
+          button:hover { filter: brightness(.95); }
+          button.parar { background: #fff; color: #b91c1c; border-color: #fca5a5; }
+          .status { flex: 1; min-width: 200px; }
+          .status b { color: #111827; }
+          .erro { color: #b91c1c; }
+        </style>
+        <div class="barra">
+          <button class="acao">🔎 Verificar todas as abas e páginas</button>
+          <span class="status"></span>
+        </div>`;
+      raiz.querySelector('.acao').addEventListener('click', () => (rodando ? (parar = true) : iniciar()));
+      return host;
+    }
+
+    function garantirBarra() {
+      if (!naTela()) return;
+      if (barra && barra.isConnected) return;
+      const ref = document.querySelector('.flow-tab-container') || document.querySelector('.return-table-content');
+      if (!ref) return;
+      barra = barra || criarBarra();
+      ref.after(barra);
+      if (!rodando) mostrarUltima();
+    }
+
+    function status(html, { erro = false } = {}) {
+      if (!barra) return;
+      const el = barra.shadowRoot.querySelector('.status');
+      el.className = `status${erro ? ' erro' : ''}`;
+      el.innerHTML = html;
+    }
+
+    function botao(textoRodando) {
+      if (!barra) return;
+      const b = barra.shadowRoot.querySelector('.acao');
+      b.textContent = textoRodando ? '⏹ Parar verificação' : '🔎 Verificar todas as abas e páginas';
+      b.classList.toggle('parar', textoRodando);
+    }
+
+    async function mostrarUltima() {
+      try {
+        const { ultimaVarredura: u } = await chrome.storage.local.get('ultimaVarredura');
+        if (!u || rodando) return;
+        const quando = new Date(u.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        status(`Última verificação completa: <b>${quando}</b> — ${u.pedidos} pedidos, <b>${u.naoEncontrados}</b> não encontrados${u.interrompida ? ' (interrompida)' : ''}.`);
+      } catch (e) { /* sem histórico */ }
+    }
+
+    /** Abas a percorrer: [{ indice, nome }] (pela posição, pois o nome pode ter contador que muda). */
+    function abasParaVarrer() {
+      const abas = [...document.querySelectorAll(CONFIG.SELETOR_ABA)]
+        .map((a, indice) => ({ indice, nome: a.textContent.trim() }))
+        .filter((a) => a.nome);
+      if (!CONFIG.ABAS_VARREDURA.length) return abas;
+      return abas.filter((a) => CONFIG.ABAS_VARREDURA.some((alvo) => normalizarTexto(a.nome).startsWith(normalizarTexto(alvo))));
+    }
+
+    async function abrirAba(indice) {
+      const aba = document.querySelectorAll(CONFIG.SELETOR_ABA)[indice];
+      if (!aba) return false;
+      if (aba.classList.contains('active')) return true;
+      const antes = assinaturaLista();
+      const pagAntes = paginaAtiva();
+      aba.click();
+      await esperarLista(antes, pagAntes); // aba vazia: não muda a lista "com pedidos", segue mesmo assim
+      return true;
+    }
+
+    async function irParaPrimeiraPagina() {
+      if (paginaAtiva() === '1' || !document.querySelector(CONFIG.SELETOR_PAGINA_ATIVA)) return;
+      const um = [...document.querySelectorAll(CONFIG.SELETOR_PAGINAS)].find((li) => li.textContent.trim() === '1');
+      if (!um) return;
+      const antes = assinaturaLista();
+      const pagAntes = paginaAtiva();
+      um.click();
+      await esperarLista(antes, pagAntes);
+    }
+
+    function proximaDisponivel() {
+      const b = document.querySelector(CONFIG.SELETOR_PROXIMA_PAGINA);
+      return b && !b.disabled && !b.classList.contains('eds-button--disabled') ? b : null;
+    }
+
+    async function iniciar() {
+      if (rodando || !naTela()) return;
+      rodando = true;
+      parar = false;
+      botao(true);
+      const vistos = new Set();
+      const naoEncontrados = new Set();
+      let paginas = 0;
+      let interrompida = false;
+      const abaOriginal = [...document.querySelectorAll(CONFIG.SELETOR_ABA)].findIndex((a) => a.classList.contains('active'));
+
+      const contar = (blocos) => {
+        for (const b of blocos) {
+          vistos.add(b.id);
+          const r = resultados.get(b.id);
+          if (r && r.encontrado === false) naoEncontrados.add(b.id);
+        }
+      };
+
+      try {
+        const abas = abasParaVarrer();
+        if (!abas.length) abas.push(null); // tela sem abas: só a paginação
+        for (const aba of abas) {
+          if (parar) break;
+          const nome = aba && aba.nome;
+          if (aba) {
+            status(`Abrindo a aba <b>${escHtml(nome)}</b>…`);
+            await abrirAba(aba.indice);
+          }
+          await irParaPrimeiraPagina();
+          for (let n = 0; n < CONFIG.MAX_PAGINAS_POR_ABA && !parar; n++) {
+            const total = totalPaginas();
+            status(`Verificando ${nome ? `<b>${escHtml(nome)}</b> — ` : ''}página <b>${paginaAtiva() || 1}</b> de ${total} · ` +
+              `${vistos.size} pedidos lidos, <b>${naoEncontrados.size}</b> não encontrados`);
+            const blocos = await esperarConsulta();
+            if (blocos.some((b) => (resultados.get(b.id) || {}).erro)) {
+              throw new Error('Não foi possível ler o arquivo de tracking (veja o balão vermelho).');
+            }
+            contar(blocos);
+            paginas++;
+            const prox = proximaDisponivel();
+            if (!prox) break;
+            await dormir(CONFIG.PAUSA_ENTRE_PAGINAS_MS);
+            const antes = assinaturaLista();
+            const pagAntes = paginaAtiva();
+            prox.click();
+            if (!(await esperarLista(antes, pagAntes))) {
+              throw new Error(`A página seguinte não carregou${nome ? ` na aba ${nome}` : ''}.`);
+            }
+          }
+        }
+        interrompida = parar;
+        if (abaOriginal >= 0) {
+          status('Voltando para a aba inicial…');
+          await abrirAba(abaOriginal);
+        }
+
+        status(`Enviando ${naoEncontrados.size} não encontrados para a base…`);
+        const envio = await new Promise((resolve) => {
+          try {
+            chrome.runtime.sendMessage({ tipo: 'enviarRetornoAgora' }, (r) => resolve(chrome.runtime.lastError ? null : r));
+          } catch (e) { resolve(null); }
+        });
+        await chrome.storage.local.set({
+          ultimaVarredura: { em: Date.now(), pedidos: vistos.size, naoEncontrados: naoEncontrados.size, paginas, interrompida },
+        }).catch(() => {});
+        const falhaEnvio = envio && envio.erro ? ` <span class="erro">Envio à base falhou: ${escHtml(envio.erro)} (fica na fila).</span>` : '';
+        status(`${interrompida ? 'Verificação interrompida' : '✔ Verificação concluída'}: <b>${vistos.size}</b> pedidos em ${paginas} páginas, ` +
+          `<b>${naoEncontrados.size}</b> não encontrados${envio && !envio.erro ? ' — informados à base' : ''}.${falhaEnvio}`);
+      } catch (e) {
+        if (abaOriginal >= 0) await abrirAba(abaOriginal).catch(() => {});
+        status(`⚠ ${escHtml(e.message || e)} Lidos até aqui: ${vistos.size} pedidos (os não encontrados já estão na fila).`, { erro: true });
+      } finally {
+        rodando = false;
+        botao(false);
+      }
+    }
+
+    return { garantirBarra, rodando: () => rodando };
+  })();
+
   // ---------------------------------------------------------------------------
   // Observa a tela (lista carregada depois, troca de aba/página, navegação interna)
   // ---------------------------------------------------------------------------
@@ -432,6 +674,7 @@
       return;
     }
     estavaNaTela = true;
+    varredura.garantirBarra();
     atualizar(false);
   }
 
