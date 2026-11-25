@@ -165,8 +165,21 @@ function gravarPedidos_(envio) {
     // Atualiza o MESMO arquivo (o ID não muda).
     arquivo.setContent(JSON.stringify(atual, null, 2));
 
+    // Abastece a aba "Retorno_Extensão" da planilha (AbaRetorno.gs). Uma falha aqui não
+    // desfaz a gravação do JSON: a aba pode ser refeita com sincronizarAbaRetorno().
+    var aba = { atualizada: false };
+    if (typeof CONFIG_ABA !== 'undefined' && CONFIG_ABA.ATUALIZAR_NO_ENVIO) {
+      try {
+        aba = { atualizada: true, linhas: escreverAbaRetorno_(atual) };
+      } catch (erroAba) {
+        console.error('Falha ao atualizar a aba: ' + erroAba);
+        aba = { atualizada: false, erro: String(erroAba && erroAba.message ? erroAba.message : erroAba) };
+      }
+    }
+
     return {
       ok: true,
+      aba: aba,
       recebidos: envio.pedidos.length,
       novos: novos,
       atualizados: atualizados,
