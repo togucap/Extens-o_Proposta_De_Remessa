@@ -99,7 +99,7 @@ Os pedidos que aparecem como **Não encontrado** são informados à base automat
 1. Ao consultar a tela, a extensão coloca na **fila** os pedidos "Não encontrado" ainda não informados.
 2. **A cada 10 minutos** (`RETORNO_INTERVALO_MINUTOS`) a fila é enviada ao App da Web
    [`apps-script/retorno-extensao`](../apps-script/retorno-extensao/), que grava o JSON
-   **`Retorno_Extensao`** na pasta do Drive. O botão **↻ Atualizar dados** também envia a fila na hora.
+   **`Retorno_Extensao_Shopee`** na pasta do Drive. O botão **↻ Atualizar dados** também envia a fila na hora.
 3. **Cada pedido é enviado uma vez.** Ele só é reenviado se a situação mudar ou depois de
    7 dias (`RETORNO_REENVIO_DIAS`), evitando atualizações repetidas quando vários usuários veem
    os mesmos pedidos.

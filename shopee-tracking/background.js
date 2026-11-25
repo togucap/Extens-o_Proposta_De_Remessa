@@ -13,7 +13,7 @@
  *
  * Retorno para a base: os pedidos que aparecem como "Não encontrado" entram numa
  * fila e são enviados periodicamente (RETORNO_INTERVALO_MINUTOS) ao App da Web
- * intermediário (apps-script/retorno-extensao), que grava o JSON Retorno_Extensao
+ * intermediário (apps-script/retorno-extensao), que grava o JSON Retorno_Extensao_Shopee
  * no Drive. Cada pedido é enviado uma vez (reenvio só se a situação mudar ou após
  * RETORNO_REENVIO_DIAS).
  */

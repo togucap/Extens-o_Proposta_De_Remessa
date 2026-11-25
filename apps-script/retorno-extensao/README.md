@@ -2,10 +2,10 @@
 
 Apps Script **separado da planilha** (não altera os scripts que já existem nela), publicado como
 **App da Web**. A extensão do Chrome envia os dados da tela da Shopee para ele, e ele grava/atualiza
-o arquivo **`Retorno_Extensao`** (JSON) numa pasta do Google Drive. A planilha base lê esse arquivo.
+o arquivo **`Retorno_Extensao_Shopee`** (JSON) numa pasta do Google Drive. A planilha base lê esse arquivo.
 
 ```
-Extensão (Shopee) ──POST JSON──► App da Web (executa como o dono) ──► Retorno_Extensao (JSON no Drive)
+Extensão (Shopee) ──POST JSON──► App da Web (executa como o dono) ──► Retorno_Extensao_Shopee (JSON no Drive)
                                                                             │
                                                           Planilha base ◄───┘ (lê o arquivo)
 ```
@@ -37,7 +37,7 @@ A extensão `shopee-tracking` envia `{ "pedido": "...", "situacao": "Não encont
 (ex.: `"motivo": "Mudei de ideia"`) **sem mudar o script**: ele aceita até 30 campos simples
 (texto, número, sim/não) por pedido.
 
-**Arquivo gerado no Drive (`Retorno_Extensao`):**
+**Arquivo gerado no Drive (`Retorno_Extensao_Shopee`):**
 
 ```json
 {
@@ -78,7 +78,7 @@ Em caso de erro: `{ "ok": false, "erro": "mensagem" }`.
    (o final do link `https://drive.google.com/drive/folders/<ID>`). Salve (Ctrl+S).
 5. **Autorizar e testar:** no topo, selecione a função **`testarGravacao`** → **Executar**.
    O Google pede autorização (acesso ao Drive e ao seu e-mail) → **Permitir**.
-   Confira na pasta do Drive que o arquivo **`Retorno_Extensao`** foi criado com o pedido `TESTE123456`.
+   Confira na pasta do Drive que o arquivo **`Retorno_Extensao_Shopee`** foi criado com o pedido `TESTE123456`.
 6. **Publicar:** **Implantar** → **Nova implantação** → ⚙️ tipo **App da Web**:
    - **Descrição:** `v1`
    - **Executar como:** **Eu**
@@ -97,7 +97,7 @@ Assim a **URL continua a mesma**. ("Nova implantação" gera uma URL diferente.)
 
 - O arquivo `TESTE123456` criado no passo 5 pode ser apagado do JSON depois (ou o arquivo inteiro,
   ele é recriado no próximo envio).
-- Se o arquivo JSON estiver corrompido, o script guarda uma cópia (`Retorno_Extensao_corrompido_…`)
+- Se o arquivo JSON estiver corrompido, o script guarda uma cópia (`Retorno_Extensao_Shopee_corrompido_…`)
   e começa um novo.
 - Limites por envio: 500 pedidos, 30 campos por pedido, 500 caracteres por valor.
 - Logs de execução: no editor do Apps Script, menu **Execuções**.

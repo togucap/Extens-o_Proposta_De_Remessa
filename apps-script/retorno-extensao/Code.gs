@@ -2,7 +2,7 @@
  * Retorno da Extensão Shopee  →  JSON no Google Drive
  *
  * App da Web (Apps Script SEPARADO da planilha) que recebe dados enviados pela
- * extensão do Chrome e grava/atualiza o arquivo "Retorno_Extensao" numa pasta
+ * extensão do Chrome e grava/atualiza o arquivo "Retorno_Extensao_Shopee" numa pasta
  * do Drive. A planilha base lê esse arquivo.
  *
  * Publicação: Implantar → Nova implantação → App da Web
@@ -37,7 +37,7 @@ var CONFIG = {
   PASTA_ID: 'COLE_AQUI_O_ID_DA_PASTA',
 
   // Nome do arquivo gerado na pasta.
-  NOME_ARQUIVO: 'Retorno_Extensao',
+  NOME_ARQUIVO: 'Retorno_Extensao_Shopee',
 
   // Limites de segurança por envio.
   MAX_PEDIDOS_POR_ENVIO: 500,
