@@ -355,12 +355,43 @@
     return m ? limpo(m[0]) : '';
   }
 
+  const semAcento = (t) => limpo(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+  /**
+   * Coluna "Ações" -> contestação:
+   *   "Enviar evidência" -> "Prazo final"
+   *   "Não foi possível coletar / Tive um problema com o produto coletado" -> "Prazo inicial"
+   */
+  function contestacao(bloco) {
+    const acoes = bloco.querySelector('.item-action');
+    const t = semAcento(acoes ? acoes.textContent : '');
+    if (t.includes('enviar evidencia')) return 'Prazo final';
+    if (t.includes('nao foi possivel coletar')) return 'Prazo inicial';
+    return '';
+  }
+
+  /** Link do pedido na Shopee (o bloco do pedido é um link para a página da solicitação). */
+  function linkPedido(bloco) {
+    const a = bloco.closest('a[href]') || bloco.querySelector('a[href]');
+    const href = a && a.getAttribute('href');
+    if (!href || href.startsWith('#') || /^javascript:/i.test(href)) return '';
+    try { return new URL(href, location.origin).href; } catch (e) { return ''; }
+  }
+
   function blocosDaTela() {
     const itens = [];
     for (const bloco of document.querySelectorAll(CONFIG.SELETOR_BLOCO)) {
       const elId = bloco.querySelector(CONFIG.SELETOR_ID_PEDIDO);
       const id = elId && elId.textContent.trim();
-      if (id) itens.push({ bloco, elId, id, statusSolicitacao: statusSolicitacao(bloco), prazo: prazoVencimento(bloco) });
+      if (id) {
+        itens.push({
+          bloco, elId, id,
+          statusSolicitacao: statusSolicitacao(bloco),
+          prazo: prazoVencimento(bloco),
+          contestacao: contestacao(bloco),
+          link: linkPedido(bloco),
+        });
+      }
     }
     return itens;
   }
@@ -377,10 +408,13 @@
     for (const b of blocosDaTela()) {
       const r = resultados.get(b.id);
       if (!r || r.erro) continue;
-      const impressao = `${r.encontrado}|${b.statusSolicitacao}|${b.prazo}`;
+      const impressao = `${r.encontrado}|${b.statusSolicitacao}|${b.prazo}|${b.contestacao}|${b.link}`;
       if (!forcar && infoRegistrada.get(b.id) === impressao) continue;
       infoRegistrada.set(b.id, impressao);
-      itens.push({ id: b.id, encontrado: !!r.encontrado, statusSolicitacao: b.statusSolicitacao, prazo: b.prazo, forcar });
+      itens.push({
+        id: b.id, encontrado: !!r.encontrado, statusSolicitacao: b.statusSolicitacao, prazo: b.prazo,
+        contestacao: b.contestacao, link: b.link, forcar,
+      });
     }
     if (!itens.length) return Promise.resolve();
     return new Promise((resolve) => {

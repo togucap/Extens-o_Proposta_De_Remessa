@@ -296,8 +296,9 @@ function lerPrazo(prazo, agora) {
  * corrige os que passaram a existir na base.
  * itens: [{ id, encontrado, statusSolicitacao, prazo }]
  *
- * Um pedido só volta para a fila se mudar a situação, o Status da solicitação, se o prazo
- * aparecer/sumir ou mudar de unidade (dias -> horas), ou após RETORNO_REENVIO_DIAS.
+ * Um pedido só volta para a fila se mudar a situação, o Status da solicitação, a contestação
+ * (Prazo inicial/final), o link, se o prazo aparecer/sumir ou mudar de unidade (dias -> horas),
+ * ou após RETORNO_REENVIO_DIAS.
  * Assim "Vence em 6 horas" -> "5 horas" não gera um novo envio (a planilha usa venceAprox).
  */
 function registrarParaRetorno(itens) {
@@ -321,8 +322,10 @@ function registrarParaRetorno(itens) {
 
       const statusSolicitacao = String(it.statusSolicitacao || '').trim();
       const prazo = String(it.prazo || '').trim();
+      const contestacao = String(it.contestacao || '').trim();
+      const link = String(it.link || '').trim();
       const { unidade, venceAprox } = lerPrazo(prazo, agora);
-      const impressao = [situacao, statusSolicitacao, unidade].join('|');
+      const impressao = [situacao, statusSolicitacao, unidade, contestacao, link].join('|');
       const precisa = !enviado || enviado.impressao !== impressao ||
         // Verificação completa (botão "Verificar todas as páginas"): envia todos os não encontrados.
         (situacao === SITUACAO_NAO && it.forcar) ||
@@ -334,7 +337,7 @@ function registrarParaRetorno(itens) {
       }
       if (!pendente || pendente.impressao !== impressao || pendente.prazo !== prazo || it.forcar) {
         estado.pendentes[chave] = {
-          situacao, statusSolicitacao, prazo,
+          situacao, statusSolicitacao, prazo, contestacao, link,
           // Mantém a estimativa anterior se só o número mudou (evita oscilar a cada leitura).
           venceAprox: pendente && pendente.impressao === impressao && pendente.venceAprox ? pendente.venceAprox : venceAprox,
           impressao, vistoEm: agora,
@@ -409,6 +412,8 @@ function enviarPendentes() {
             statusSolicitacao: p.statusSolicitacao || '',
             prazo: p.prazo || '',
             venceAprox: p.venceAprox || '',
+            contestacao: p.contestacao || '',
+            link: p.link || '',
           };
         }));
         const agora = Date.now();

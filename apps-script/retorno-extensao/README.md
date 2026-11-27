@@ -37,7 +37,8 @@ pedido informado passa a existir na base):
 
 ```json
 { "pedido": "...", "situacao": "Não encontrado", "statusSolicitacao": "Em análise pela Shopee",
-  "prazo": "Vence em 6 horas", "venceAprox": "2026-11-25T21:30:00-03:00" }
+  "prazo": "Vence em 6 horas", "venceAprox": "2026-11-25T21:30:00-03:00",
+  "contestacao": "Prazo final", "link": "https://seller.shopee.com.br/portal/sale/return/248397368137061" }
 ```
 
 Campos vazios (`""`) também são gravados, para limpar um valor antigo (ex.: o prazo sumiu).

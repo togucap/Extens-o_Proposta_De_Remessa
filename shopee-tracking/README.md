@@ -118,7 +118,9 @@ Cada pedido enviado:
   "situacao": "Não encontrado",
   "statusSolicitacao": "Em análise pela Shopee",
   "prazo": "Vence em 6 horas",
-  "venceAprox": "2026-11-25T21:30:00-03:00"
+  "venceAprox": "2026-11-25T21:30:00-03:00",
+  "contestacao": "Prazo final",
+  "link": "https://seller.shopee.com.br/portal/sale/return/248397368137061"
 }
 ```
 
@@ -127,8 +129,10 @@ Cada pedido enviado:
 | `statusSolicitacao` | Coluna **Status da solicitação** (só a 1ª linha, sem o texto de ajuda). Sempre enviado |
 | `prazo` | Coluna **Ações**, apenas o texto **"Vence em …"** (ex.: "Vence em 6 horas", "Vence em 1 dias"). Vazio quando não há |
 | `venceAprox` | Data/hora aproximada do vencimento, calculada no momento da leitura (`prazo` é relativo e fica desatualizado). Vazio quando não há prazo |
+| `contestacao` | Coluna **Ações**: **"Prazo final"** quando há "Enviar evidência"; **"Prazo inicial"** quando há "Não foi possível coletar / Tive um problema com o produto coletado"; vazio nos demais casos |
+| `link` | Link do pedido na Shopee (o mesmo do bloco do pedido / número do pedido): página da solicitação |
 
-Um pedido só é reenviado quando muda a situação, o Status da solicitação, quando o prazo
+Um pedido só é reenviado quando muda a situação, o Status da solicitação, a contestação, o link, quando o prazo
 aparece/some ou muda de unidade (dias → horas). "Vence em 6 horas" → "5 horas" **não** gera reenvio.
 No pop-up de um pedido "Não encontrado" aparece **"📤 Na fila para informar à base"** ou
 **"📤 Informado à base em dd/mm, hh:mm"** (e o erro do último envio, se houver).
